@@ -119,6 +119,8 @@ const handleSubmit = async () => {
       localStorage.removeItem('auth_username')
       localStorage.removeItem('auth_expire_at')
       localStorage.removeItem('auth_is_admin')
+      localStorage.removeItem('auth_role')
+      localStorage.removeItem('auth_userId')
       router.push('/login')
     } else {
       ElMessage.error(res.message || '修改失败')

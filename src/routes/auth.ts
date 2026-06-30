@@ -26,7 +26,7 @@ function initDefaultAdmin() {
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
     if (userCount.count === 0) {
       const passwordHash = crypto.createHash('sha256').update(DEFAULT_ADMIN.password).digest('hex');
-      db.prepare('INSERT INTO users (name, password_hash, is_admin) VALUES (?, ?, 1)').run(DEFAULT_ADMIN.username, passwordHash);
+      db.prepare("INSERT INTO users (name, password_hash, role) VALUES (?, ?, 'super_admin')").run(DEFAULT_ADMIN.username, passwordHash);
       console.log('[auth] Default admin user created: admin/admin');
     }
   } catch (error) {
@@ -195,11 +195,17 @@ router.post('/login', (req: Request, res: Response) => {
 
     // 验证用户
     const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-    const user = db.prepare('SELECT id, name, role FROM users WHERE name = ? AND password_hash = ?').get(username, passwordHash) as { id: number; name: string; role: string } | undefined;
+    const user = db.prepare('SELECT id, name, role FROM users WHERE name = ? AND password_hash = ?').get(username, passwordHash) as { id: number; name: string; role: string | null } | undefined;
 
     if (!user) {
       res.status(401).json({ success: false, message: '用户名或密码错误' });
       return;
+    }
+
+    // 兼容旧数据：如果 role 为空，根据用户名判断
+    let role = user.role;
+    if (!role) {
+      role = user.name === 'admin' ? 'super_admin' : 'user';
     }
 
     // 生成新的 token
@@ -212,7 +218,7 @@ router.post('/login', (req: Request, res: Response) => {
       data: {
         userId: user.id,
         username: user.name,
-        role: user.role,
+        role,
         token,
         tokenExpireAt,
       },
@@ -303,53 +309,6 @@ router.post('/change-password', (req: Request, res: Response) => {
   } catch (error) {
     console.error('[auth] change-password error:', error);
     res.status(500).json({ success: false, message: '修改密码失败' });
-  }
-});
-
-// ========== 获取用户列表 ==========
-router.get('/users', (req: Request, res: Response) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, message: '未登录' });
-      return;
-    }
-
-    const users = db.prepare('SELECT id, name, is_admin, created_at FROM users ORDER BY id ASC').all();
-    res.json({ success: true, data: users });
-  } catch (error) {
-    console.error('[auth] get users error:', error);
-    res.status(500).json({ success: false, message: '获取用户列表失败' });
-  }
-});
-
-// ========== 删除用户 ==========
-router.delete('/users/:id', (req: Request, res: Response) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, message: '未登录' });
-      return;
-    }
-
-    const userId = parseInt(req.params.id as string);
-    if (isNaN(userId)) {
-      res.status(400).json({ success: false, message: '无效的用户ID' });
-      return;
-    }
-
-    // 不允许删除自己
-    const currentUser = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
-    if (!currentUser) {
-      res.status(404).json({ success: false, message: '用户不存在' });
-      return;
-    }
-
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-    res.json({ success: true, message: '用户删除成功' });
-  } catch (error) {
-    console.error('[auth] delete user error:', error);
-    res.status(500).json({ success: false, message: '删除用户失败' });
   }
 });
 

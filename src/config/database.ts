@@ -64,16 +64,29 @@ try {
   // 瀛楁ķ鍙ď兘宸插瓨鍦★紝蹇界暐閿欒
 }
 try {
-  db.exec('ALTER TABLE users ADD COLUMN role TEXT DEFAULT '\''user'\'' CHECK(role IN ('\''super_admin'\'', '\''admin'\'', '\''user'\''))');
+  db.exec(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user' CHECK(role IN ('super_admin', 'admin', 'user'))`);
 } catch (e) {
-  // 瀛楁ķ鍙ď兘宸插瓨鍦★紝蹇界暐閿欒
+  // 列可能已存在，忽略错误
 }
 
-// 灏哸dmin璁剧疆涓烘満绠″楂樼瓑绠
+// 将 admin 设置为超级管理员
 try {
   db.prepare("UPDATE users SET role = 'super_admin' WHERE name = 'admin' AND (role IS NULL OR role = 'user' OR role = '' OR role = 'admin')").run();
 } catch (e) {
-  // 蹇界暐閿欒
+  // 忽略错误
+}
+
+// 为已存在的 models 表添加 user_id 列（用户数据隔离）
+try {
+  db.exec('ALTER TABLE models ADD COLUMN user_id INTEGER REFERENCES users(id)');
+} catch (e) {
+  // 列可能已存在，忽略错误
+}
+// 将已有模型的 user_id 设为 1（admin 用户）
+try {
+  db.prepare("UPDATE models SET user_id = 1 WHERE user_id IS NULL").run();
+} catch (e) {
+  // 忽略错误
 }
 
 db.exec(`

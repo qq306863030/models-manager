@@ -3,12 +3,33 @@ import db from '../config/database';
 
 const router = Router();
 
+// ========== 辅助函数 ==========
+
+/** 根据用户名查询用户 ID */
+function getUserIdByUsername(username: string): number | null {
+  const user = db.prepare('SELECT id FROM users WHERE name = ?').get(username) as { id: number } | undefined;
+  return user?.id ?? null;
+}
+
+/** 从请求头 X-Username 获取当前用户 ID */
+function getCurrentUserId(req: Request): number | null {
+  const username = req.headers['x-username'] as string | undefined;
+  if (!username) return null;
+  return getUserIdByUsername(username);
+}
+
 // 获取所有模型（按 sort_index 排序，-1 保持原添加顺序）
 router.get('/', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const models = db.prepare(
-      'SELECT * FROM models ORDER BY CASE WHEN sort_index = -1 THEN 999999 ELSE sort_index END ASC, created_at ASC'
-    ).all();
+      'SELECT * FROM models WHERE user_id = ? ORDER BY CASE WHEN sort_index = -1 THEN 999999 ELSE sort_index END ASC, created_at ASC'
+    ).all(userId);
     const parsedModels = models.map((model: any) => ({
       ...model,
       isLock: Number(model.isLock) || 0,
@@ -24,7 +45,13 @@ router.get('/', (req: Request, res: Response) => {
 // 获取单个模型
 router.get('/:id', (req: Request, res: Response) => {
   try {
-    const model: any = db.prepare('SELECT * FROM models WHERE id = ?').get(req.params.id);
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
+    const model: any = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(req.params.id, userId);
     if (model) {
       model.isLock = Number(model.isLock) || 0;
       model.isDisable = Boolean(model.isDisable);
@@ -41,18 +68,24 @@ router.get('/:id', (req: Request, res: Response) => {
 // 复制模型（仅复制基础信息，不复制统计数据）
 router.post('/:id/copy', (req: Request, res: Response) => {
   try {
-    const model: any = db.prepare('SELECT * FROM models WHERE id = ?').get(req.params.id);
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
+    const model: any = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(req.params.id, userId);
     if (!model) {
       res.status(404).json({ success: false, message: '模型不存在' });
       return;
     }
 
-    // 查找当前最大 sort_index
-    const maxRow: any = db.prepare('SELECT MAX(sort_index) as maxIdx FROM models').get();
+    // 查找当前用户的最大 sort_index
+    const maxRow: any = db.prepare('SELECT MAX(sort_index) as maxIdx FROM models WHERE user_id = ?').get(userId);
     const nextIndex = (maxRow.maxIdx ?? -1) + 1;
 
     const stmt = db.prepare(
-      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const result = stmt.run(
       model.name + '_copy',
@@ -66,7 +99,8 @@ router.post('/:id/copy', (req: Request, res: Response) => {
       model.model_label_id,
       model.capabilities,
       0, // 复制时清除锁定时间戳
-      model.isDisable ? 1 : 0
+      model.isDisable ? 1 : 0,
+      userId // 复制到当前用户
     );
 
     res.status(201).json({
@@ -82,16 +116,22 @@ router.post('/:id/copy', (req: Request, res: Response) => {
 // 批量更新模型索引（拖拽排序后保存）
 router.put('/reorder', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const items: Array<{ id: number; sort_index: number }> = req.body?.items;
     if (!Array.isArray(items)) {
       res.status(400).json({ success: false, message: '参数 items 必须为数组' });
       return;
     }
 
-    const stmt = db.prepare('UPDATE models SET sort_index = ? WHERE id = ?');
+    const stmt = db.prepare('UPDATE models SET sort_index = ? WHERE id = ? AND user_id = ?');
     const updateMany = db.transaction((rows: typeof items) => {
       for (const row of rows) {
-        stmt.run(row.sort_index, row.id);
+        stmt.run(row.sort_index, row.id, userId);
       }
     });
     updateMany(items);
@@ -105,6 +145,12 @@ router.put('/reorder', (req: Request, res: Response) => {
 // 创建模型
 router.post('/', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const { name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable } = req.body;
 
     if (!name || !model_name || !url || !api_key) {
@@ -114,13 +160,14 @@ router.post('/', (req: Request, res: Response) => {
 
     const capabilitiesJson = JSON.stringify(capabilities || ['completion', 'tools', 'thinking']);
     const stmt = db.prepare(
-      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     const result = stmt.run(
       name, model_name, url,
       max_content_length || 4096, max_token || 2048, api_key,
       sort_index || 0, api_format || 1, model_label_id ?? null, capabilitiesJson,
-      Number(isLock) || 0, isDisable ? 1 : 0
+      Number(isLock) || 0, isDisable ? 1 : 0,
+      userId
     );
 
     res.status(201).json({
@@ -141,6 +188,12 @@ router.post('/', (req: Request, res: Response) => {
 // 批量创建模型
 router.post('/batch', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const items: Array<{
       name?: string; model_name?: string; max_content_length?: number;
       max_token?: number; model_label_id?: number | null; capabilities?: string[];
@@ -164,12 +217,12 @@ router.post('/batch', (req: Request, res: Response) => {
       return;
     }
 
-    // 查找当前最大 sort_index
-    const maxRow: any = db.prepare('SELECT MAX(sort_index) as maxIdx FROM models').get();
+    // 查找当前用户的最大 sort_index
+    const maxRow: any = db.prepare('SELECT MAX(sort_index) as maxIdx FROM models WHERE user_id = ?').get(userId);
     let nextIndex = (maxRow.maxIdx ?? -1) + 1;
 
     const stmt = db.prepare(
-      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
 
     const insertMany = db.transaction((rows: typeof items) => {
@@ -183,7 +236,8 @@ router.post('/batch', (req: Request, res: Response) => {
           name, model_name, sharedUrl,
           row.max_content_length || 4096, row.max_token || 2048, sharedApiKey,
           nextIndex++, sharedApiFormat ?? 1, row.model_label_id ?? null, JSON.stringify(rowCapabilities),
-          0, 0
+          0, 0,
+          userId
         );
         inserted.push(Number(result.lastInsertRowid));
       }
@@ -200,15 +254,21 @@ router.post('/batch', (req: Request, res: Response) => {
 // 更新模型
 router.put('/:id', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const { name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable } = req.body;
     const capabilitiesJson = JSON.stringify(capabilities || ['completion', 'tools', 'thinking']);
     const stmt = db.prepare(
-      'UPDATE models SET name = ?, model_name = ?, url = ?, max_content_length = ?, max_token = ?, api_key = ?, sort_index = ?, api_format = ?, model_label_id = ?, capabilities = ?, isLock = ?, isDisable = ? WHERE id = ?'
+      'UPDATE models SET name = ?, model_name = ?, url = ?, max_content_length = ?, max_token = ?, api_key = ?, sort_index = ?, api_format = ?, model_label_id = ?, capabilities = ?, isLock = ?, isDisable = ? WHERE id = ? AND user_id = ?'
     );
     const result = stmt.run(
       name, model_name, url, max_content_length, max_token, api_key,
       sort_index ?? -1, api_format ?? 1, model_label_id ?? null, capabilitiesJson,
-      Number(isLock) || 0, isDisable ? 1 : 0, req.params.id
+      Number(isLock) || 0, isDisable ? 1 : 0, req.params.id, userId
     );
     if (result.changes > 0) {
       res.json({ success: true, message: '模型更新成功' });
@@ -224,8 +284,14 @@ router.put('/:id', (req: Request, res: Response) => {
 // 设置/清除模型锁定时间戳（isLock：0=解锁，>0=锁定时间戳）
 router.put('/:id/lock', (req: Request, res: Response) => {
   try {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
     const isLock = Number(req.body?.isLock) || 0;
-    const result = db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(isLock, req.params.id);
+    const result = db.prepare('UPDATE models SET isLock = ? WHERE id = ? AND user_id = ?').run(isLock, req.params.id, userId);
     if (result.changes > 0) {
       res.json({ success: true, message: isLock === 0 ? '已解锁' : '已锁定' });
     } else {
@@ -240,10 +306,16 @@ router.put('/:id/lock', (req: Request, res: Response) => {
 // 删除模型
 router.delete('/:id', (req: Request, res: Response) => {
   try {
-    // 删除模型关联的统计数据
-    db.prepare('DELETE FROM token_stats WHERE model_id = ?').run(req.params.id);
-    const stmt = db.prepare('DELETE FROM models WHERE id = ?');
-    const result = stmt.run(req.params.id);
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      res.status(401).json({ success: false, message: '未登录' });
+      return;
+    }
+
+    // 删除模型关联的统计数据（只能删除自己的）
+    db.prepare('DELETE FROM token_stats WHERE model_id = ? AND model_id IN (SELECT id FROM models WHERE user_id = ?)').run(req.params.id, userId);
+    const stmt = db.prepare('DELETE FROM models WHERE id = ? AND user_id = ?');
+    const result = stmt.run(req.params.id, userId);
     if (result.changes > 0) {
       res.json({ success: true, message: '模型删除成功' });
     } else {

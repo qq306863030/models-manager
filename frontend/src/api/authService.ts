@@ -20,13 +20,14 @@ export interface AuthResult {
   username: string;
   token: string;
   tokenExpireAt: number;
-  isAdmin: boolean;
+  role: string;
 }
 
 export interface UserItem {
   id: number;
   name: string;
-  is_admin: number;
+  email: string | null;
+  role: string;
   created_at: string;
 }
 
@@ -60,17 +61,22 @@ export function changePassword(username: string, oldPassword: string, newPasswor
   return request.post('/auth/change-password', { username, oldPassword, newPassword });
 }
 
-// 获取用户列表
+// 获取用户列表（仅管理员）
 export function getUserList(): Promise<{ success: boolean; data?: UserItem[]; message?: string }> {
-  return request.get('/auth/users');
+  return request.get('/users');
 }
 
-// 删除用户
+// 删除用户（仅管理员）
 export function deleteUser(id: number): Promise<{ success: boolean; message: string }> {
-  return request.delete(`/auth/users/${id}`);
+  return request.delete(`/users/${id}`);
 }
 
 // 创建用户（仅管理员）
-export function createUser(username: string, password: string): Promise<{ success: boolean; message: string }> {
-  return request.post('/auth/register', { username, password });
+export function createUser(username: string, password: string, role?: string): Promise<{ success: boolean; message: string; data?: any }> {
+  return request.post('/users', { name: username, password, role: role || 'user' });
+}
+
+// 更新用户（仅管理员）
+export function updateUser(id: number, data: { name?: string; email?: string; role?: string; password?: string }): Promise<{ success: boolean; message: string }> {
+  return request.put(`/users/${id}`, data);
 }

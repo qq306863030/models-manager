@@ -115,6 +115,8 @@ const handleLogin = async () => {
       localStorage.setItem('auth_username', res.data.username)
       localStorage.setItem('auth_expire_at', String(res.data.tokenExpireAt))
       localStorage.setItem('auth_role', res.data.role || 'user')
+      localStorage.setItem('auth_is_admin', res.data.role === 'super_admin' || res.data.role === 'admin' ? '1' : '0')
+      localStorage.setItem('auth_userId', String(res.data.userId))
 
       ElMessage.success('登录成功')
       router.push('/')

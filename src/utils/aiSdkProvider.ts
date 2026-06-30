@@ -31,6 +31,7 @@ export interface ModelRow {
   capabilities: string | null;
   isLock: number;
   isDisable: number;
+  user_id?: number;
   created_at: string;
 }
 

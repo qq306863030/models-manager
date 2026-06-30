@@ -8,7 +8,7 @@
             返回
           </el-button>
           <span>用户管理</span>
-          <el-button type="primary" size="small" @click="showAddDialog = true">
+          <el-button type="primary" size="small" @click="openAddDialog">
             <el-icon><Plus /></el-icon>
             添加用户
           </el-button>
@@ -16,22 +16,33 @@
       </template>
 
       <el-table :data="userList" v-loading="loading" stripe>
-        <el-table-column prop="id" label="ID" width="80" align="center" />
-        <el-table-column prop="name" label="用户名" min-width="150" />
-        <el-table-column label="角色" width="100" align="center">
+        <el-table-column prop="id" label="ID" width="60" align="center" />
+        <el-table-column prop="name" label="用户名" min-width="120" />
+        <el-table-column label="角色" width="120" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.is_admin === 1 ? 'danger' : 'info'" size="small">
-              {{ row.is_admin === 1 ? '管理员' : '普通用户' }}
+            <el-tag :type="roleTagType(row.role)" size="small">
+              {{ roleLabel(row.role) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
+        <el-table-column prop="email" label="邮箱" min-width="150">
+          <template #default="{ row }">
+            {{ row.email || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="170">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column label="操作" width="140" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button
+              size="small"
+              text
+              @click="openEditDialog(row)">
+              编辑
+            </el-button>
             <el-button
               type="danger"
               size="small"
@@ -46,7 +57,7 @@
     </el-card>
 
     <!-- 添加用户对话框 -->
-    <el-dialog v-model="showAddDialog" title="添加用户" width="400px">
+    <el-dialog v-model="addDialogVisible" title="添加用户" width="420px">
       <el-form ref="addFormRef" :model="addFormData" :rules="addFormRules" label-width="80px">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="addFormData.username" placeholder="请输入用户名" />
@@ -54,10 +65,38 @@
         <el-form-item label="密码" prop="password">
           <el-input v-model="addFormData.password" type="password" placeholder="请输入密码" show-password />
         </el-form-item>
+        <el-form-item label="角色" prop="role">
+          <el-select v-model="addFormData.role" style="width: 100%">
+            <el-option label="普通用户" value="user" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
+        <el-button @click="addDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="addLoading" @click="handleAdd">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑用户对话框 -->
+    <el-dialog v-model="editDialogVisible" title="编辑用户" width="420px">
+      <el-form ref="editFormRef" :model="editFormData" :rules="editFormRules" label-width="80px">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="editFormData.username" placeholder="请输入用户名" />
+        </el-form-item>
+        <el-form-item label="新密码" prop="password">
+          <el-input v-model="editFormData.password" type="password" placeholder="留空则不修改密码" show-password />
+        </el-form-item>
+        <el-form-item label="角色" prop="role">
+          <el-select v-model="editFormData.role" style="width: 100%">
+            <el-option label="普通用户" value="user" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editLoading" @click="handleEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -68,7 +107,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Back, Plus } from '@element-plus/icons-vue'
-import { getUserList, deleteUser, createUser } from '@/api/authService'
+import { getUserList, deleteUser, createUser, updateUser } from '@/api/authService'
 import type { UserItem } from '@/api/authService'
 
 const router = useRouter()
@@ -76,12 +115,14 @@ const loading = ref(false)
 const userList = ref<UserItem[]>([])
 const currentUserId = ref<number>(0)
 
-const showAddDialog = ref(false)
+// ========== 添加用户 ==========
+const addDialogVisible = ref(false)
 const addFormRef = ref<FormInstance>()
 const addLoading = ref(false)
 const addFormData = reactive({
   username: '',
   password: '',
+  role: 'user',
 })
 
 const addFormRules: FormRules = {
@@ -93,6 +134,50 @@ const addFormRules: FormRules = {
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, message: '密码长度至少为 6 个字符', trigger: 'blur' },
   ],
+  role: [
+    { required: true, message: '请选择角色', trigger: 'change' },
+  ],
+}
+
+// ========== 编辑用户 ==========
+const editDialogVisible = ref(false)
+const editFormRef = ref<FormInstance>()
+const editLoading = ref(false)
+const editingUser = ref<UserItem | null>(null)
+const editFormData = reactive({
+  username: '',
+  password: '',
+  role: 'user',
+})
+
+const editFormRules: FormRules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 3, max: 20, message: '用户名长度为 3-20 个字符', trigger: 'blur' },
+  ],
+  role: [
+    { required: true, message: '请选择角色', trigger: 'change' },
+  ],
+}
+
+// ========== 工具函数 ==========
+
+const roleLabel = (role: string) => {
+  const map: Record<string, string> = {
+    super_admin: '超级管理员',
+    admin: '管理员',
+    user: '普通用户',
+  }
+  return map[role] || role
+}
+
+const roleTagType = (role: string) => {
+  const map: Record<string, string> = {
+    super_admin: 'danger',
+    admin: 'warning',
+    user: 'info',
+  }
+  return map[role] || 'info'
 }
 
 const formatDate = (dateStr: string) => {
@@ -104,6 +189,8 @@ const formatDate = (dateStr: string) => {
 const goBack = () => {
   router.back()
 }
+
+// ========== 数据加载 ==========
 
 const loadUsers = async () => {
   loading.value = true
@@ -118,6 +205,78 @@ const loadUsers = async () => {
     loading.value = false
   }
 }
+
+// ========== 添加用户 ==========
+
+const openAddDialog = () => {
+  addFormData.username = ''
+  addFormData.password = ''
+  addFormData.role = 'user'
+  addDialogVisible.value = true
+}
+
+const handleAdd = async () => {
+  const formValid = await addFormRef.value?.validate().catch(() => false)
+  if (!formValid) return
+
+  addLoading.value = true
+  try {
+    const res = await createUser(addFormData.username, addFormData.password, addFormData.role)
+    if (res.success) {
+      ElMessage.success('添加成功')
+      addDialogVisible.value = false
+      addFormRef.value?.resetFields()
+      loadUsers()
+    } else {
+      ElMessage.error(res.message || '添加失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.message || '添加失败')
+  } finally {
+    addLoading.value = false
+  }
+}
+
+// ========== 编辑用户 ==========
+
+const openEditDialog = (row: UserItem) => {
+  editingUser.value = row
+  editFormData.username = row.name
+  editFormData.password = ''
+  editFormData.role = row.role === 'super_admin' ? 'admin' : row.role
+  editDialogVisible.value = true
+}
+
+const handleEdit = async () => {
+  const formValid = await editFormRef.value?.validate().catch(() => false)
+  if (!formValid) return
+  if (!editingUser.value) return
+
+  editLoading.value = true
+  try {
+    const data: any = {
+      name: editFormData.username,
+      role: editFormData.role,
+    }
+    if (editFormData.password) {
+      data.password = editFormData.password
+    }
+    const res = await updateUser(editingUser.value.id, data)
+    if (res.success) {
+      ElMessage.success('更新成功')
+      editDialogVisible.value = false
+      loadUsers()
+    } else {
+      ElMessage.error(res.message || '更新失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.message || '更新失败')
+  } finally {
+    editLoading.value = false
+  }
+}
+
+// ========== 删除用户 ==========
 
 const handleDelete = async (row: UserItem) => {
   try {
@@ -141,35 +300,14 @@ const handleDelete = async (row: UserItem) => {
   }
 }
 
-const handleAdd = async () => {
-  const formValid = await addFormRef.value?.validate().catch(() => false)
-  if (!formValid) return
-
-  addLoading.value = true
-  try {
-    const res = await createUser(addFormData.username, addFormData.password)
-    if (res.success) {
-      ElMessage.success('添加成功')
-      showAddDialog.value = false
-      addFormRef.value?.resetFields()
-      loadUsers()
-    } else {
-      ElMessage.error(res.message || '添加失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error?.message || '添加失败')
-  } finally {
-    addLoading.value = false
-  }
-}
+// ========== 初始化 ==========
 
 onMounted(() => {
   loadUsers()
-  // 从 localStorage 获取当前用户ID（暂时用用户名匹配）
-  const username = localStorage.getItem('auth_username')
-  const isAdmin = localStorage.getItem('auth_is_admin')
-  if (isAdmin === '1' && username === 'admin') {
-    currentUserId.value = 1 // 默认管理员ID
+  // 从 localStorage 获取当前用户ID
+  const userId = localStorage.getItem('auth_userId')
+  if (userId) {
+    currentUserId.value = parseInt(userId)
   }
 })
 </script>
@@ -185,7 +323,7 @@ onMounted(() => {
 
 .page-card {
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
 
   .card-header {
     display: flex;

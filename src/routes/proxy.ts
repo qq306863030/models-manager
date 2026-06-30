@@ -55,9 +55,24 @@ function getEffectiveContentLength(modelContentLength: number): number {
   return settings.max_content_length > 0 ? settings.max_content_length : modelContentLength;
 }
 
+// ========== 用户查询辅助 ==========
+
+/** 根据用户名查询用户 ID */
+function getUserIdByUsername(username: string): number | null {
+  const user = db.prepare('SELECT id FROM users WHERE name = ?').get(username) as { id: number } | undefined;
+  return user?.id ?? null;
+}
+
 // ========== 数据库读取辅助 ==========
 
-function getAllModels(): ModelRow[] {
+function getAllModels(userId?: number): ModelRow[] {
+  if (userId !== undefined) {
+    return db
+      .prepare(
+        'SELECT * FROM models WHERE user_id = ? ORDER BY CASE WHEN sort_index = -1 THEN 999999 ELSE sort_index END ASC, created_at ASC'
+      )
+      .all(userId) as ModelRow[];
+  }
   return db
     .prepare(
       'SELECT * FROM models ORDER BY CASE WHEN sort_index = -1 THEN 999999 ELSE sort_index END ASC, created_at ASC'
@@ -65,9 +80,9 @@ function getAllModels(): ModelRow[] {
     .all() as ModelRow[];
 }
 
-function unlockExpiredModels(): void {
+function unlockExpiredModels(userId?: number): void {
   const now = Date.now();
-  const expiredIds = getAllModels()
+  const expiredIds = getAllModels(userId)
     .filter((m) => m.isLock > 0 && now - m.isLock > LOCK_DURATION_MS)
     .map((m) => m.id);
 
@@ -77,9 +92,9 @@ function unlockExpiredModels(): void {
   }
 }
 
-function getAvailableModels(): ModelRow[] {
-  unlockExpiredModels();
-  return getAllModels().filter((m) => !m.isDisable && !isModelLocked(m.isLock).locked);
+function getAvailableModels(userId?: number): ModelRow[] {
+  unlockExpiredModels(userId);
+  return getAllModels(userId).filter((m) => !m.isDisable && !isModelLocked(m.isLock).locked);
 }
 
 function estimateTextTokens(text: string): number {
@@ -98,7 +113,10 @@ function estimateMessagesTokens(messages: GenericMessage[]): number {
   );
 }
 
-function getModelByName(name: string): ModelRow | undefined {
+function getModelByName(name: string, userId?: number): ModelRow | undefined {
+  if (userId !== undefined) {
+    return db.prepare('SELECT * FROM models WHERE name = ? AND user_id = ?').get(name, userId) as ModelRow | undefined;
+  }
   return db.prepare('SELECT * FROM models WHERE name = ?').get(name) as ModelRow | undefined;
 }
 
@@ -132,11 +150,12 @@ function parseModelCapabilities(raw?: string | null): string[] {
 async function tryModelsSequentially<T>(
   requestModelName: string,
   tryFn: (model: ModelRow) => Promise<T> | T,
+  userId?: number,
 ): Promise<T | null> {
   const now = Date.now();
 
   // 构建可用池
-  let available = getAvailableModels();
+  let available = getAvailableModels(userId);
 
   if (available.length === 0) return null;
 
@@ -1010,11 +1029,19 @@ router.get('/api/version', (_req: Request, res: Response) => {
 
 const userRouter = Router({ mergeParams: true });
 
-// 记录用户名到 req 上，供后续使用
+// 扩展 Request 类型，添加 userId
+interface RequestWithUser extends Request {
+  proxyUsername?: string;
+  proxyUserId?: number;
+}
+
+// 记录用户名到 req 上，并查询 userId
 userRouter.use((req: Request, _res: Response, next) => {
   const username = (req.params as Record<string, string>).username;
   if (username) {
-    (req as Request & { proxyUsername?: string }).proxyUsername = username;
+    const reqWithUser = req as RequestWithUser;
+    reqWithUser.proxyUsername = username;
+    reqWithUser.proxyUserId = getUserIdByUsername(username) ?? undefined;
   }
   next();
 });
@@ -1022,7 +1049,9 @@ userRouter.use((req: Request, _res: Response, next) => {
 // 将请求代理到现有路由
 
 userRouter.get('/v1/test', async (req: Request, res: Response) => {
-  const available = getAvailableModels();
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  const available = getAvailableModels(userId);
   if (available.length === 0) {
     res.status(404).json({ error: { message: 'no available model', type: 'upstream_error', status: 503 } });
     return;
@@ -1074,6 +1103,331 @@ userRouter.get('/v1/test', async (req: Request, res: Response) => {
   }
 });
 
+// ========== 用户级 API 路由（使用 proxyUserId 过滤） ==========
+
+// GET /v1/models - 返回当前用户的可用模型
+userRouter.get('/v1/models', (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  res.json({
+    object: 'list',
+    data: getAllModels(userId).filter((m) => !m.isDisable).map(buildOpenAIModel),
+  });
+});
+
+// POST /v1/chat/completions - 用户级聊天补全
+userRouter.post('/v1/chat/completions', async (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  const body = req.body as Record<string, unknown>;
+  const requestModelName = (body.model as string) || '';
+  const isStream = body.stream === true;
+
+  const allModels = getAvailableModels(userId);
+  const requestModel = allModels.find((m) => m.name === requestModelName);
+  const ordered = requestModel
+    ? [requestModel, ...allModels.filter((m) => m.id !== requestModel.id)]
+    : allModels;
+
+  if (ordered.length === 0) {
+    res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
+    return;
+  }
+
+  const messages = convertToOpenAIChatMessages((body.messages as any[]) || []);
+  const promptTokens = estimateMessagesTokens(messages);
+  const tools = body.tools ? body.tools as Array<{ function: { name: string; description?: string; parameters: Record<string, unknown> } }> : undefined;
+  const settingsMaxToken = getUserSettings().max_token;
+  const maxTokens = settingsMaxToken > 0
+    ? settingsMaxToken
+    : Math.min((body.max_tokens as number) ?? MAX_RESPONSE_TOKENS, MAX_RESPONSE_TOKENS);
+
+  if (isStream) {
+    if (res.headersSent) return;
+
+    let idx = 0;
+    while (idx < ordered.length) {
+      const model = ordered[idx++];
+      const provider = createModelProvider(model);
+
+      try {
+        if (provider.type === 'anthropic') {
+          await streamAnthropic(provider, {
+            messages,
+            system: body.system as string,
+            maxOutputTokens: maxTokens,
+            temperature: body.temperature as number | undefined,
+            tools,
+          }, res, model.id, promptTokens);
+        } else {
+          await streamOpenAIChat(provider, {
+            messages,
+            maxOutputTokens: maxTokens,
+            temperature: body.temperature as number | undefined,
+            topP: body.top_p as number | undefined,
+            tools,
+            toolChoice: body.tool_choice as string | undefined,
+          }, res, model.id, promptTokens);
+        }
+        return;
+      } catch (err) {
+        const error = err as Error & { status?: number; statusCode?: number };
+        const status = error.status || error.statusCode || 500;
+        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+
+        if (isStream && res.headersSent) {
+          console.error('[chat stream] Headers already sent, cannot switch to next model');
+          return;
+        }
+        if (idx < ordered.length) continue;
+
+        res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
+        return;
+      }
+    }
+  }
+
+  let usedModel: ModelRow | undefined;
+  const result = await tryModelsSequentially(requestModelName, async (model: ModelRow) => {
+    const provider = createModelProvider(model);
+    usedModel = model;
+
+    if (provider.type === 'anthropic') {
+      return callAnthropic(provider, {
+        messages,
+        system: body.system as string,
+        maxOutputTokens: maxTokens,
+        temperature: body.temperature as number | undefined,
+        tools,
+      });
+    } else {
+      const chatResult = await callOpenAIChat(provider, {
+        messages,
+        maxOutputTokens: maxTokens,
+        temperature: body.temperature as number | undefined,
+        topP: body.top_p as number | undefined,
+        tools,
+        toolChoice: body.tool_choice as string | undefined,
+      });
+      return chatResult as unknown as Record<string, unknown>;
+    }
+  }, userId);
+
+  if (!result) {
+    res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
+    return;
+  }
+
+  if (result.usage) {
+    trackTokenUsage(usedModel?.id, result.usage as any);
+  } else if (usedModel) {
+    trackTokenUsage(usedModel.id, {
+      prompt_tokens: promptTokens,
+      completion_tokens: estimateTextTokens(JSON.stringify(result)),
+      total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
+    });
+  }
+
+  res.json(result);
+});
+
+// POST /v1/responses - 用户级 Responses API
+userRouter.post('/v1/responses', async (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  const body = req.body as Record<string, unknown>;
+  const requestModelName = (body.model as string) || '';
+  const isStream = body.stream === true;
+
+  const chatBody = convertResponsesRequestToChatRequest({
+    ...body,
+    model: requestModelName,
+    max_tokens: Math.min(
+      (body.max_output_tokens as number) ?? (body.max_tokens as number) ?? MAX_RESPONSE_TOKENS,
+      MAX_RESPONSE_TOKENS
+    ),
+  });
+
+  const messages = convertToOpenAIChatMessages((chatBody.messages as any[]) || []);
+  const tools = chatBody.tools ? chatBody.tools as Array<{ function: { name: string; description?: string; parameters: Record<string, unknown> } }> : undefined;
+  const settingsMaxToken = getUserSettings().max_token;
+  const maxTokens = settingsMaxToken > 0
+    ? settingsMaxToken
+    : Math.min((chatBody.max_tokens as number) ?? MAX_RESPONSE_TOKENS, MAX_RESPONSE_TOKENS);
+
+  const allModels = getAvailableModels(userId);
+  const requestModel = allModels.find((m) => m.name === requestModelName);
+  const ordered = requestModel
+    ? [requestModel, ...allModels.filter((m) => m.id !== requestModel.id)]
+    : allModels;
+
+  if (ordered.length === 0) {
+    res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
+    return;
+  }
+
+  if (isStream) {
+    if (res.headersSent) return;
+
+    let idx = 0;
+    while (idx < ordered.length) {
+      const model = ordered[idx++];
+      const provider = createModelProvider(model);
+
+      try {
+        if (provider.type === 'anthropic') {
+          await streamAnthropic(provider, {
+            messages,
+            system: chatBody.system as string,
+            maxOutputTokens: maxTokens,
+            temperature: chatBody.temperature as number | undefined,
+            tools,
+          }, res, model.id);
+        } else if (provider.type === 'openai-responses') {
+          await streamOpenAIResponses(provider, {
+            messages,
+            maxOutputTokens: maxTokens,
+            temperature: chatBody.temperature as number | undefined,
+            tools,
+          }, body, res, model.id);
+        } else {
+          await streamOpenAIChat(provider, {
+            messages,
+            maxOutputTokens: maxTokens,
+            temperature: chatBody.temperature as number | undefined,
+            tools,
+          }, res);
+        }
+        return;
+      } catch (err) {
+        const error = err as Error & { status?: number; statusCode?: number };
+        const status = error.status || error.statusCode || 500;
+        console.error(`[responses stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+
+        if (res.headersSent) return;
+        if (idx < ordered.length) continue;
+
+        res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
+        return;
+      }
+    }
+  }
+
+  const result = await tryModelsSequentially(requestModelName, async (model: ModelRow) => {
+    const provider = createModelProvider(model);
+
+    if (provider.type === 'anthropic') {
+      return callAnthropic(provider, {
+        messages,
+        system: chatBody.system as string,
+        maxOutputTokens: maxTokens,
+        temperature: chatBody.temperature as number | undefined,
+        tools,
+      });
+    } else if (provider.type === 'openai-responses') {
+      return callOpenAIResponses(provider, {
+        messages,
+        maxOutputTokens: maxTokens,
+        temperature: chatBody.temperature as number | undefined,
+        tools,
+      }, body);
+    } else {
+      const chatResult = await callOpenAIChat(provider, {
+        messages,
+        maxOutputTokens: maxTokens,
+        temperature: chatBody.temperature as number | undefined,
+        tools,
+      });
+      return chatResult as unknown as Record<string, unknown>;
+    }
+  }, userId);
+
+  if (!result) {
+    res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
+    return;
+  }
+
+  const usedModel =
+    getAllModels(userId).find((m) => m.name === requestModelName) ??
+    getAllModels(userId).filter((m) => !m.isDisable)[0];
+
+  if (result.usage) {
+    trackTokenUsage(usedModel?.id, result.usage as any);
+  }
+
+  const responseResult = convertChatCompletionToResponse(result, body);
+  res.json(responseResult);
+});
+
+// GET /api/tags - Ollama 兼容（用户级）
+userRouter.get('/api/tags', (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  res.json({
+    models: getAvailableModels(userId)
+      .map((model) => ({
+        name: model.name,
+        model: model.name,
+        remote_model: model.model_name,
+        remote_host: model.url,
+        modified_at: model.created_at,
+        size: 342,
+        digest: generateRandomString(),
+        details: {
+          parent_model: '',
+          format: '',
+          family: '',
+          families: null,
+          parameter_size: '',
+          quantization_level: '',
+          context_length: getEffectiveContentLength(model.max_content_length),
+        },
+        capabilities: parseModelCapabilities(model.capabilities),
+      })),
+  });
+});
+
+// POST /api/show - Ollama 兼容（用户级）
+userRouter.post('/api/show', (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  const userId = reqWithUser.proxyUserId;
+  const { model: name } = req.body as { model?: string };
+  const models = getAvailableModels(userId);
+  const model = name ? getModelByName(name, userId) : models[0];
+  if (!model) {
+    res.status(404).json({ error: 'model not found' });
+    return;
+  }
+  const effectiveContentLength = getEffectiveContentLength(model.max_content_length);
+  res.json({
+    name: model.name,
+    details: {
+      parent_model: '',
+      format: '',
+      family: '',
+      families: null,
+      parameter_size: '32682372656',
+      quantization_level: 'BF16',
+    },
+    model_info: {
+      'custom.context_length': effectiveContentLength,
+      'custom.embedding_length': 5376,
+      'general.architecture': 'custom',
+      'general.parameter_count': 32682372656,
+    },
+    capabilities: parseModelCapabilities(model.capabilities),
+    modified_at: model.created_at,
+  });
+});
+
+// GET /api/version - Ollama 兼容（无状态）
+userRouter.get('/api/version', (_req: Request, res: Response) => {
+  res.json({ version: '0.30.2' });
+});
+
+// 挂载根路由（处理未被 userRouter 上面明确定义的路由）
 userRouter.use(router);
 
 // 导出用户路由
