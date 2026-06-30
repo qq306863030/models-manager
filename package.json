@@ -1,0 +1,62 @@
+﻿{
+  "name": "models-manager",
+  "version": "1.0.0",
+  "description": "一个简单的模型管理工具，统一管理多种 LLM 提供商，提供代理路由和 token 追踪能力，提供模型中转能力。",
+  "main": "dist/app.js",
+  "bin": {
+    "ai-server": "./bin/ai-server.js"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "ts-node src/app.ts",
+    "dev:client": "wait-on tcp:11888 && cd frontend && npm run dev",
+    "build": "tsc && cd frontend && npm run build",
+    "start": "pm2 start ecosystem.config.js",
+    "reload": "pm2 reload ecosystem.config.js",
+    "stop": "pm2 stop ecosystem.config.js",
+    "delete": "pm2 delete ecosystem.config.js",
+    "logs": "pm2 logs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://git.romangis.top:999/my_code/cmd.git"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "openai",
+    "anthropic",
+    "ollama",
+    "proxy",
+    "gateway",
+    "chatgpt",
+    "claude",
+    "token-tracker",
+    "model-manager"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
+    "ai": "^7.0.2",
+    "axios": "^1.18.1",
+    "better-sqlite3": "^12.11.1",
+    "concurrently": "^9.1.0",
+    "express": "^5.2.1",
+    "morgan": "^1.11.0",
+    "openai": "^6.45.0",
+    "pm2": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/axios": "^0.9.36",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^26.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3",
+    "wait-on": "^9.0.10"
+  }
+}
+

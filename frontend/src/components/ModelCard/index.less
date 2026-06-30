@@ -1,0 +1,198 @@
+.model-card-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: calc(25% - 12px);
+  min-width: 280px;
+  max-width: 400px;
+
+  // 拖拽时显示拖拽样式
+  &.sortable-ghost {
+    opacity: 0.5;
+  }
+
+  &.sortable-drag .model-card {
+    transform: rotate(2deg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.model-card {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+  background: #fff;
+
+  &.is-selected {
+    border-color: #409eff;
+    box-shadow: 0 4px 16px rgba(64, 158, 255, 0.2);
+  }
+
+  &:hover {
+    border-color: #409eff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+// 拖拽排序提示
+  .card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #f4f4f5;
+    background: #fafafa;
+    border-radius: 8px 8px 0 0;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    .card-checkbox {
+      flex-shrink: 0;
+      height: 24px;
+    }
+
+    .card-action-buttons {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+
+      .state-btn {
+        color: #909399;
+        border-color: #dcdfe6;
+        background: #fff;
+      }
+
+      .lock-btn.is-active {
+        color: #fff;
+        border-color: #e6a23c;
+        background: #e6a23c;
+      }
+
+      .disable-btn.is-active {
+        color: #fff;
+        border-color: #f56c6c;
+        background: #f56c6c;
+      }
+    }
+  }
+
+  // 卡片主体内容
+  .card-body {
+    padding: 0 14px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    // 标题（粗体，与模型名称同字号）
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #303133;
+      line-height: 1.5;
+      word-break: break-all;
+      margin-bottom: 2px;
+    }
+
+    .card-row {
+      display: flex;
+      align-items: flex-start;
+      font-size: 12px;
+      line-height: 1.5;
+      gap: 4px;
+
+      .card-label {
+        color: #909399;
+        flex-shrink: 0;
+        width: 80px;
+      }
+
+      .card-value {
+        color: #303133;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .card-value-url {
+        font-size: 11px;
+        color: #606266;
+        font-family: monospace;
+      }
+
+      .card-value-key {
+        color: #606266;
+        font-family: monospace;
+      }
+
+      .card-value-stat {
+        color: #e6a23c;
+        font-weight: 600;
+      }
+
+      &.card-row-stat {
+        background: linear-gradient(90deg, #fdf6ec 0%, #fef9f3 100%);
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin-top: 2px;
+      }
+    }
+  }
+
+  // 编辑模式表单：label 统一宽度，输入框占满剩余空间
+  .card-edit-form {
+    padding: 12px 10px;
+
+    :deep(.el-form-item) {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+
+      .el-form-item__label {
+        font-size: 12px;
+        padding-left: 10px;
+        text-align: left;
+        line-height: 28px;
+      }
+
+      .el-form-item__content {
+        flex: 1;
+        min-width: 0;
+        line-height: 28px;
+
+        .el-input .el-input__inner,
+        .el-input-number .el-input__inner {
+          height: 28px;
+          line-height: 28px;
+        }
+
+        .el-input-number {
+          width: 100%;
+        }
+      }
+    }
+
+    // 按钮行：底部右对齐
+    :deep(.el-form-item:last-child) {
+      margin-bottom: 0;
+      .el-form-item__content {
+        display: flex;
+        justify-content: flex-end;
+      }
+    }
+  }
+
+  // 覆盖 Element Plus 默认居右：label 居左
+  :deep(.el-form-item__label) {
+    text-align: left !important;
+    justify-content: flex-start !important;
+  }
+}

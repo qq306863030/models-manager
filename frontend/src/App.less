@@ -1,0 +1,266 @@
+.app-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f0f2f5;
+}
+
+.app-header {
+  background: #fff;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  padding: 0 24px;
+  flex-shrink: 0;
+
+  .header-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #303133;
+  }
+}
+
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-card {
+  margin-bottom: 16px;
+
+  // 隐藏滚动条但允许滚动
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+// 图表区：固定高度 400px
+.chart-section {
+  flex-shrink: 0;
+  height: 400px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  :deep(.el-card__body) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+}
+
+
+
+.section-card.model-section {
+  flex-shrink: 0;
+
+  &>:deep(.el-card__body) {
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 610px;
+
+    .model-card-wrap {
+      .model-card {
+        flex-shrink: 0;
+
+        .el-card__body {
+          overflow: hidden;
+          padding: 0 !important;
+        }
+      }
+    }
+  }
+}
+
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .section-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .el-button {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .model-count {
+    font-size: 13px;
+    color: #909399;
+    background: #f4f4f5;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+}
+
+// ========== 模型卡片列表（换行显示） ==========
+.model-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  min-height: 100px;
+
+  // vuedraggable 默认渲染的 wrapper 也需要 flex wrap
+  &>div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  // 纵向滚动条样式
+  &::-webkit-scrollbar,
+  &>div::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track,
+  &>div::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb,
+  &>div::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+
+    &:hover {
+      background: #a8a8a8;
+    }
+  }
+
+  :deep(.sortable-ghost) {
+    opacity: 0.4;
+  }
+
+  :deep(.sortable-drag) {
+    opacity: 0.9;
+  }
+}
+
+// ========== 图表容器 ==========
+.chart-container {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+// ========== 接口弹窗 ==========
+:deep(.api-table) {
+
+  // 移除横向滚动条，内容自然撑开
+  .el-table__body-wrapper {
+    overflow-x: hidden !important;
+  }
+
+  .el-table__header-wrapper th {
+    text-align: center !important;
+  }
+
+  .el-table__body-wrapper td {
+    vertical-align: middle;
+  }
+
+  // 方法列 tag 无背景无边框
+  .el-tag {
+    background-color: transparent !important;
+    border: none !important;
+    color: #67c23a; // GET=绿色
+
+    &.el-tag--primary {
+      color: #409eff; // POST=蓝色
+    }
+  }
+}
+
+.url-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.endpoint-url {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #409eff;
+  background: #f0f7ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+.copy-icon {
+  flex-shrink: 0;
+  color: #909399;
+  cursor: pointer;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #409eff;
+  }
+}
+
+.endpoint-desc {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+// ========== API Key 表单 ==========
+.api-key-form {
+  margin-bottom: 16px;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.api-key-hint {
+  font-size: 13px;
+  color: #909399;
+
+  code {
+    background: #f0f7ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #409eff;
+  }
+}

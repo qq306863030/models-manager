@@ -1,0 +1,453 @@
+<template>
+  <div class="home-container">
+    <!-- ========== 顶部导航栏 ========== -->
+    <el-header class="app-header">
+      <div class="header-left">
+        <h1 class="app-title">AI 模型管理平台</h1>
+      </div>
+      <div class="header-right">
+        <!-- 用户管理入口（仅管理员显示） -->
+        <el-button
+          v-if="isAdmin"
+          text
+          @click="$router.push('/user-manage')">
+          <el-icon><User /></el-icon>
+          用户管理
+        </el-button>
+
+        <!-- 修改密码 -->
+        <el-button text @click="$router.push('/change-password')">
+          <el-icon><Lock /></el-icon>
+          修改密码
+        </el-button>
+
+        <!-- 注销 -->
+        <el-button text type="danger" @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          注销
+        </el-button>
+
+        <!-- 用户名显示 -->
+        <span class="username">{{ username }}</span>
+      </div>
+    </el-header>
+
+    <!-- ========== 主内容区 ========== -->
+    <el-main class="app-main">
+      <el-card class="model-list-card">
+        <template #header>
+          <div class="card-header">
+            <div class="left">
+              <el-checkbox
+                v-model="isAllChecked"
+                :indeterminate="isIndeterminate"
+                @change="handleToggleAll">
+                全选
+              </el-checkbox>
+              <span class="model-count">已选择 {{ checkedModelIds.length }} 个模型</span>
+            </div>
+            <div class="right">
+              <el-button
+                v-if="checkedModelIds.length > 0"
+                type="danger"
+                size="small"
+                @click="handleBatchDelete">
+                <el-icon><Delete /></el-icon>
+                批量删除
+              </el-button>
+              <el-button type="primary" size="small" @click="openAddDialog">
+                <el-icon><Plus /></el-icon>
+                添加模型
+              </el-button>
+              <el-button size="small" @click="openApiDialog">
+                <el-icon><DocumentChecked /></el-icon>
+                查看接口
+              </el-button>
+              <el-button size="small" @click="openSettingsDialog">
+                <el-icon><Setting /></el-icon>
+                设置
+              </el-button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 模型列表（可拖拽排序） -->
+        <draggable
+          v-model="modelList"
+          item-key="id"
+          handle=".card-actions"
+          class="model-list-draggable"
+          :style="{ maxHeight: '630px', overflowY: 'auto' }"
+          @end="onDragEnd">
+          <template #item="{ element }">
+            <ModelCard
+              :model="element"
+              :is-selected="selectedModelId === element.id"
+              :checked="checkedModelIds.includes(element.id)"
+              @select="selectModel"
+              @edit="openEditDialog(element)"
+              @check-change="(id, checked) => handleCheckChange(id, checked)"
+              @copy="handleCopy"
+              @delete="handleDelete"
+              @toggle-lock="handleToggleLock"
+              @toggle-disable="handleToggleDisable" />
+          </template>
+        </draggable>
+
+        <el-empty
+          v-if="modelList.length === 0"
+          description="暂无模型，请点击上方「添加模型」按钮添加" />
+      </el-card>
+
+      <!-- 统计图表 -->
+      <el-card class="stats-card">
+        <template #header>
+          <div class="card-header">
+            <span>使用统计</span>
+          </div>
+        </template>
+        <div class="stats-charts">
+          <div class="stat-chart">
+            <div class="stat-chart-title">全部模型</div>
+            <TokenLineChart
+              :data="allStats"
+              :loading="statsLoading" />
+          </div>
+          <div class="stat-chart" v-if="selectedModelId && selectedModelName">
+            <div class="stat-chart-title">{{ selectedModelName }}</div>
+            <TokenLineChart
+              :data="selectedModelStats"
+              :loading="statsLoading" />
+          </div>
+        </div>
+      </el-card>
+    </el-main>
+
+    <!-- ========== 添加模型弹窗 ========== -->
+    <AddModelDialog ref="addDialogRef" @submit="handleAddSubmit" />
+
+    <!-- ========== 查看接口弹窗 ========== -->
+    <el-dialog v-model="apiDialogVisible" title="代理接口地址" width="800px">
+      <!-- API Key 配置 -->
+      <el-form label-width="100px" class="api-key-form">
+        <el-form-item label="API Key">
+          <div class="api-key-row">
+            <el-input
+              v-model="customApiKey"
+              placeholder="输入自定义 API Key（可选，留空则使用模型的 API Key）"
+              show-password
+              clearable
+              style="flex: 1" />
+            <el-button @click="generateApiKey">生成</el-button>
+            <el-button @click="clearApiKey">清除</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="说明">
+          <span class="api-key-hint">
+            如果填写了 API Key，调用接口时需要在 Header 中添加 <code>Authorization: Bearer {api_key}</code>
+          </span>
+        </el-form-item>
+      </el-form>
+
+      <el-divider />
+
+      <!-- 接口列表 -->
+      <el-table :data="proxyEndpoints" stripe size="small" class="api-table">
+        <el-table-column label="方法" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.method === 'GET' ? 'success' : 'primary'" size="small" round>
+              {{ row.method }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="完整地址" min-width="0">
+          <template #default="{ row }">
+            <div class="url-cell">
+              <el-icon class="copy-icon" @click="copyText(copyEndpointWithKey(row.path))">
+                <CopyDocument />
+              </el-icon>
+              <code class="endpoint-url" @click="copyText(copyEndpointWithKey(row.path))">{{ userProxyBaseUrl }}{{ row.path }}</code>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" min-width="0">
+          <template #default="{ row }">
+            <span class="endpoint-desc">{{ row.desc }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- ========== 设置弹窗 ========== -->
+    <SettingsDialog ref="settingsDialogRef" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User } from '@element-plus/icons-vue'
+import draggable from 'vuedraggable'
+
+// 组件
+import ModelCard from '@/components/ModelCard/index.vue'
+import TokenLineChart from '@/components/TokenLineChart/index.vue'
+import SettingsDialog from '@/components/SettingsDialog/index.vue'
+import AddModelDialog from '@/components/AddModelDialog/index.vue'
+
+// 逻辑
+import {
+  modelLoading,
+  statsLoading,
+  modelList,
+  checkedModelIds,
+  selectedModelId,
+  selectedModelName,
+  dateRange,
+  allStats,
+  selectedModelStats,
+  modelLabelOptions,
+  addDialogRef,
+  openAddDialog,
+  handleAddSubmit,
+  handleCheckChange,
+  handleToggleAll,
+  handleBatchDelete,
+  isAllChecked,
+  handleReorder,
+  selectModel,
+  apiDialogVisible,
+  proxyBaseUrl,
+  userProxyBaseUrl,
+  customApiKey,
+  proxyEndpoints,
+  openApiDialog,
+  generateApiKey,
+  clearApiKey,
+  copyEndpointWithKey,
+  onMountedCallback,
+  loadStats,
+} from '@/App'
+
+const router = useRouter()
+
+// 用户信息
+const username = localStorage.getItem('auth_username') || ''
+const isAdmin = computed(() => localStorage.getItem('auth_is_admin') === '1')
+
+// 编辑弹窗 ref（暂未使用，后续可扩展）
+const settingsDialogRef = ref<InstanceType<typeof SettingsDialog>>()
+const openSettingsDialog = () => {
+  settingsDialogRef.value?.openDialog()
+}
+
+const isIndeterminate = computed(() => {
+  const len = checkedModelIds.value.length
+  return len > 0 && len < modelList.value.length
+})
+
+const onModelFilterChange = () => {
+  loadStats()
+}
+
+// 拖拽排序
+const onDragEnd = () => {
+  handleReorder(modelList.value)
+}
+
+// 复制文本
+const copyText = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    ElMessage.success('已复制到剪贴板')
+  })
+}
+
+// 打开编辑弹窗
+const openEditDialog = (model: any) => {
+  // 触发编辑事件
+  window.dispatchEvent(new CustomEvent('open-edit-model', { detail: model }))
+}
+
+// 处理函数（从 App.ts 导入）
+import {
+  handleCopy,
+  handleDelete,
+  handleToggleLock,
+  handleToggleDisable,
+} from '@/App'
+
+// 注销
+const handleLogout = () => {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_username')
+  localStorage.removeItem('auth_expire_at')
+  localStorage.removeItem('auth_is_admin')
+  router.push('/login')
+}
+
+// 初始化
+onMountedCallback()
+</script>
+
+<style scoped lang="less">
+.home-container {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  padding: 0 24px;
+
+  .header-left {
+    .app-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #303133;
+      margin: 0;
+    }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .username {
+      margin-left: 12px;
+      padding-left: 12px;
+      border-left: 1px solid #e4e7ed;
+      color: #606266;
+      font-size: 14px;
+    }
+  }
+}
+
+.app-main {
+  padding: 20px 24px;
+
+  .model-list-card,
+.stats-card {
+  margin-bottom: 20px;
+}
+
+.model-list-card :deep(.el-card__body) {
+  padding: 20px;
+}
+}
+
+.model-list-draggable {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.stats-charts {
+  display: flex;
+  gap: 24px;
+  height: 340px;
+
+  .stat-chart {
+    flex: 1;
+    min-width: 0;
+
+    .stat-chart-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #606266;
+      margin-bottom: 12px;
+      padding-left: 4px;
+    }
+  }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+
+    .model-count {
+      font-size: 14px;
+      color: #909399;
+    }
+  }
+
+  .right {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+// API Key 表单
+.api-key-form {
+  margin-bottom: 16px;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.api-key-hint {
+  font-size: 13px;
+  color: #909399;
+
+  code {
+    background: #f0f7ff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #409eff;
+  }
+}
+
+.api-table {
+  .url-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .copy-icon {
+    cursor: pointer;
+    color: #409eff;
+
+    &:hover {
+      color: #66b1ff;
+    }
+  }
+
+  .endpoint-url {
+    font-size: 12px;
+    color: #606266;
+    cursor: pointer;
+
+    &:hover {
+      color: #409eff;
+    }
+  }
+
+  .endpoint-desc {
+    font-size: 12px;
+    color: #909399;
+  }
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+}
+</style>
