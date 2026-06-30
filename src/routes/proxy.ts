@@ -896,7 +896,7 @@ router.post('/v1/responses', async (req: Request, res: Response) => {
             maxOutputTokens: maxTokens,
             temperature: chatBody.temperature as number | undefined,
             tools,
-          }, res);
+          }, res, model.id, estimateMessagesTokens(messages));
         }
         return;
       } catch (err) {
@@ -1297,7 +1297,7 @@ userRouter.post('/v1/responses', async (req: Request, res: Response) => {
             maxOutputTokens: maxTokens,
             temperature: chatBody.temperature as number | undefined,
             tools,
-          }, res);
+          }, res, model.id, estimateMessagesTokens(messages));
         }
         return;
       } catch (err) {
