@@ -355,6 +355,7 @@ export const proxyEndpoints = [
   { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（Ollama 兼容）' },
   { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
   { method: 'GET',  path: '/api/version',            desc: 'Ollama 版本信息' },
+  { method: 'GET',  path: '/v1/test',    desc: '测试接口，支持 model 和 content 参数' },
 ]
 
 // 用户名前缀的代理地址

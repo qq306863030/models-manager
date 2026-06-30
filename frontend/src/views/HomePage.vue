@@ -84,6 +84,7 @@
               :model="element"
               :is-selected="selectedModelId === element.id"
               :checked="checkedModelIds.includes(element.id)"
+              :stat-summary="modelStatMap.get(element.id)"
               @select="selectModel"
               @edit="openEditDialog(element)"
               @check-change="(id, checked) => handleCheckChange(id, checked)"
@@ -184,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User } from '@element-plus/icons-vue'
@@ -207,6 +208,7 @@ import {
   dateRange,
   allStats,
   selectedModelStats,
+  modelStatMap,
   modelLabelOptions,
   addDialogRef,
   openAddDialog,
@@ -288,6 +290,20 @@ const handleLogout = () => {
 
 // 初始化
 onMountedCallback()
+
+// 定时刷新统计数据（每 30 秒）
+let statsRefreshTimer: number | null = null
+onMounted(() => {
+  statsRefreshTimer = window.setInterval(() => {
+    loadStats()
+  }, 30000)
+})
+onUnmounted(() => {
+  if (statsRefreshTimer !== null) {
+    clearInterval(statsRefreshTimer)
+    statsRefreshTimer = null
+  }
+})
 </script>
 
 <style scoped lang="less">

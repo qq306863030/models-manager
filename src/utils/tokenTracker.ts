@@ -112,8 +112,10 @@ async function flush(): Promise<void> {
     const upsertMany = db.transaction((records: TokenRecord[]) => {
       for (const r of records) {
         const updateResult = updateStmt.run(r.inToken, r.outToken, r.totalToken, r.count, r.modelId, today)
+        console.log(`[tokenTracker] Upsert: modelId=${r.modelId}, date=${today}, updateChanges=${updateResult.changes}`);
         if (updateResult.changes === 0) {
           insertStmt.run(r.modelId, today, r.inToken, r.outToken, r.totalToken, r.count)
+          console.log(`[tokenTracker] Inserted new record for modelId=${r.modelId}`);
         }
       }
     })
@@ -150,7 +152,11 @@ export function trackTokenUsage(
   modelId: number | undefined,
   usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null,
 ): void {
-  if (!usage || !modelId) return
+  console.log(`[tokenTracker] trackTokenUsage called: modelId=${modelId}, usage=`, usage);
+  if (!usage || !modelId) {
+    console.log('[tokenTracker] Early return: !usage || !modelId');
+    return;
+  }
 
   const inToken = usage.prompt_tokens ?? 0
   const outToken = usage.completion_tokens ?? 0

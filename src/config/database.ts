@@ -4,7 +4,7 @@ import fs from 'fs';
 
 const dbPath = path.join(__dirname, '../../data/database.db');
 
-// 确保 data 目录存在
+// 纭ķ繚 data 鐩ķ綍瀛樺湪
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -12,7 +12,7 @@ if (!fs.existsSync(dataDir)) {
 
 const db: DatabaseType = new Database(dbPath);
 
-// 初始化数据库表
+// 鍒濆簱鍖栨暟鎹ķ簱琛?
 db.exec(`
   CREATE TABLE IF NOT EXISTS models (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,21 +52,28 @@ db.exec(`
     name TEXT NOT NULL UNIQUE,
     email TEXT UNIQUE,
     password_hash TEXT,
-    is_admin INTEGER DEFAULT 0,
+    role TEXT DEFAULT 'user' CHECK(role IN ('super_admin', 'admin', 'user')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-// 为已存在的 users 表添加新字段（如果不存在）
+// 涓哄凡瀛樺湪鐨?users 琛屽姞鍏ユ柊瀛楁ķ
 try {
   db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
 } catch (e) {
-  // 字段可能已存在，忽略错误
+  // 瀛楁ķ鍙ď兘宸插瓨鍦★紝蹇界暐閿欒
 }
 try {
-  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0');
+  db.exec('ALTER TABLE users ADD COLUMN role TEXT DEFAULT '\''user'\'' CHECK(role IN ('\''super_admin'\'', '\''admin'\'', '\''user'\''))');
 } catch (e) {
-  // 字段可能已存在，忽略错误
+  // 瀛楁ķ鍙ď兘宸插瓨鍦★紝蹇界暐閿欒
+}
+
+// 灏哸dmin璁剧疆涓烘満绠″楂樼瓑绠
+try {
+  db.prepare("UPDATE users SET role = 'super_admin' WHERE name = 'admin' AND (role IS NULL OR role = 'user' OR role = '' OR role = 'admin')").run();
+} catch (e) {
+  // 蹇界暐閿欒
 }
 
 db.exec(`
@@ -87,7 +94,7 @@ db.exec(`
   )
 `);
 
-// 确保 user_settings 表只有一条记录
+// 纭ķ繚 user_settings 琛ㄥ彧鏈変竴鏉¤Ę褰?
 const settingsCount = db.prepare('SELECT COUNT(*) as count FROM user_settings').get() as { count: number };
 if (settingsCount.count === 0) {
   db.prepare('INSERT INTO user_settings (id, max_content_length, max_token) VALUES (1, 0, 0)').run();

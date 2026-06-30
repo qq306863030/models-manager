@@ -1020,6 +1020,60 @@ userRouter.use((req: Request, _res: Response, next) => {
 });
 
 // 将请求代理到现有路由
+
+userRouter.get('/v1/test', async (req: Request, res: Response) => {
+  const available = getAvailableModels();
+  if (available.length === 0) {
+    res.status(404).json({ error: { message: 'no available model', type: 'upstream_error', status: 503 } });
+    return;
+  }
+
+  const requestedModel = typeof req.query.model === 'string' && req.query.model.trim() !== ''
+    ? req.query.model.trim()
+    : '';
+  const model = requestedModel
+    ? available.find((m) => m.name === requestedModel || m.model_name === requestedModel)
+    : available[0];
+
+  if (!model) {
+    res.status(404).json({ error: { message: 'model not found', type: 'upstream_error', status: 404 } });
+    return;
+  }
+
+  const queryContent = typeof req.query.content === 'string' && req.query.content.trim() !== ''
+    ? req.query.content
+    : 'hello';
+
+  try {
+    const provider = createModelProvider(model);
+    const chatResult = await callOpenAIChat(provider, {
+      messages: [{ role: 'user', content: queryContent }],
+      maxOutputTokens: MAX_RESPONSE_TOKENS,
+    });
+
+    const promptTokens = estimateMessagesTokens([{ role: 'user', content: queryContent }]);
+
+    if (chatResult.usage) {
+      trackTokenUsage(model.id, chatResult.usage as any);
+    } else if (chatResult.choices && chatResult.choices[0]) {
+      const outputText = typeof chatResult.choices[0].message?.content === 'string'
+        ? chatResult.choices[0].message.content : JSON.stringify(chatResult.choices[0]);
+      const estimatedOutputTokens = estimateTextTokens(outputText);
+      trackTokenUsage(model.id, {
+        prompt_tokens: promptTokens,
+        completion_tokens: estimatedOutputTokens,
+        total_tokens: promptTokens + estimatedOutputTokens,
+      });
+    }
+
+    res.json(chatResult);
+  } catch (error: any) {
+    console.error('[test] Error:', error?.message);
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({ error: { message: error.message, type: 'upstream_error', status: statusCode } });
+  }
+});
+
 userRouter.use(router);
 
 // 导出用户路由

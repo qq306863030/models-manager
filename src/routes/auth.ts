@@ -195,7 +195,7 @@ router.post('/login', (req: Request, res: Response) => {
 
     // 验证用户
     const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-    const user = db.prepare('SELECT * FROM users WHERE name = ? AND password_hash = ?').get(username, passwordHash) as { id: number; name: string; password_hash: string } | undefined;
+    const user = db.prepare('SELECT id, name, role FROM users WHERE name = ? AND password_hash = ?').get(username, passwordHash) as { id: number; name: string; role: string } | undefined;
 
     if (!user) {
       res.status(401).json({ success: false, message: '用户名或密码错误' });
@@ -212,6 +212,7 @@ router.post('/login', (req: Request, res: Response) => {
       data: {
         userId: user.id,
         username: user.name,
+        role: user.role,
         token,
         tokenExpireAt,
       },
@@ -287,7 +288,7 @@ router.post('/change-password', (req: Request, res: Response) => {
 
     // 验证旧密码
     const oldPasswordHash = crypto.createHash('sha256').update(oldPassword).digest('hex');
-    const user = db.prepare('SELECT * FROM users WHERE name = ? AND password_hash = ?').get(username, oldPasswordHash) as { id: number; name: string } | undefined;
+    const user = db.prepare('SELECT id, name, role FROM users WHERE name = ? AND password_hash = ?').get(username, oldPasswordHash) as { id: number; name: string } | undefined;
 
     if (!user) {
       res.status(401).json({ success: false, message: '旧密码错误' });
