@@ -37,6 +37,15 @@
   ],
   "author": "",
   "license": "ISC",
+  "files": [
+    "dist/",
+    "bin/",
+    "src/config/",
+    "frontend/dist/",
+    "data/",
+    "ecosystem.config.js",
+    "migrate_role.js"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
     "ai": "^7.0.2",
