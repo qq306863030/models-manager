@@ -40,11 +40,8 @@
   "files": [
     "dist/",
     "bin/",
-    "src/config/",
-    "frontend/dist/",
     "data/",
-    "ecosystem.config.js",
-    "migrate_role.js"
+    "ecosystem.config.js"
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
