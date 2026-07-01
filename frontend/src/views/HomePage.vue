@@ -230,6 +230,7 @@ import {
   copyEndpointWithKey,
   onMountedCallback,
   loadStats,
+  checkAndRefreshLockStatus,
 } from '@/App'
 
 const router = useRouter()
@@ -293,12 +294,13 @@ const handleLogout = () => {
 // 初始化
 onMountedCallback()
 
-// 定时刷新统计数据（每 30 秒）
+// 定时刷新统计数据和锁定状态（每 20 秒）
 let statsRefreshTimer: number | null = null
 onMounted(() => {
   statsRefreshTimer = window.setInterval(() => {
     loadStats()
-  }, 30000)
+    checkAndRefreshLockStatus()
+  }, 20000)
 })
 onUnmounted(() => {
   if (statsRefreshTimer !== null) {

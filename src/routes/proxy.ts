@@ -260,7 +260,8 @@ function streamOpenAIChatCompletion(
         trackTokenUsage(modelId, estimatedUsage);
       }
 
-      writeSSE(res, '[DONE]');
+      // 发送 SSE 完成信号
+      res.write('data: [DONE]\n\n');
       res.end();
     } catch (err) {
       console.error('[chat stream] fatal:', err);
@@ -334,7 +335,8 @@ function streamAnthropicMessages(
         trackTokenUsage(modelId, estimatedUsage);
       }
 
-      writeSSE(res, '[DONE]');
+      // 发送 SSE 完成信号
+      res.write('data: [DONE]\n\n');
       res.end();
     } catch (err) {
       console.error('[anthropic stream] fatal:', err);
@@ -694,6 +696,229 @@ async function streamOpenAIResponses(
   })();
 }
 
+// 将 Chat Completion SSE 转换为 Responses API SSE 格式
+function streamOpenAIChatAsResponses(
+  stream: AsyncIterable<OpenAI.Chat.ChatCompletionChunk>,
+  res: Response,
+  modelName: string,
+  modelId?: number,
+  promptTokens = 0,
+) {
+  const responseId = `resp_${generateRandomString(12)}`;
+  const createdAt = Math.floor(Date.now() / 1000);
+  const completionId = `chatcmpl-${generateRandomString(12)}`;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  // 发送 response.created 事件
+  writeSSEEvent(res, 'response.created', {
+    type: 'response.created',
+    response: {
+      id: responseId,
+      object: 'response',
+      created_at: createdAt,
+      status: 'in_progress' as const,
+      model: modelName,
+      output: [],
+      error: null,
+    },
+  });
+
+  let text = '';
+  let messageId = `msg_${generateRandomString(12)}`;
+  let toolCalls: Array<{
+    id: string;
+    type: 'function_call';
+    status: 'in_progress' | 'completed';
+    call_id: string;
+    name: string;
+    arguments: string;
+  }> = [];
+  let currentToolCallIndex = -1;
+  let usage: OpenAI.CompletionUsage | null = null;
+  let finished = false;
+
+  (async () => {
+    try {
+      for await (const chunk of stream) {
+        if (finished || res.writableEnded) break;
+
+        if (chunk.usage) usage = chunk.usage;
+
+        const delta = chunk.choices[0]?.delta || {};
+        const finishReason = chunk.choices[0]?.finish_reason;
+
+        // 处理文本内容
+        if (typeof delta.content === 'string' && delta.content) {
+          text += delta.content;
+          writeSSEEvent(res, 'response.output_text.delta', {
+            type: 'response.output_text.delta',
+            item_id: messageId,
+            output_index: 0,
+            content_index: 0,
+            delta: delta.content,
+          });
+        }
+
+        // 处理 tool_calls
+        if (delta.tool_calls && delta.tool_calls.length > 0) {
+          for (const tc of delta.tool_calls) {
+            if (tc.function?.name) {
+              // 新的 tool_call 开始
+              currentToolCallIndex++;
+              const newToolCall = {
+                id: `fc_${generateRandomString(12)}`,
+                type: 'function_call' as const,
+                status: 'in_progress' as const,
+                call_id: tc.id || `call_${generateRandomString(12)}`,
+                name: tc.function.name,
+                arguments: tc.function.arguments || '',
+              };
+              toolCalls.push(newToolCall);
+              writeSSEEvent(res, 'response.function_call_arguments_delta', {
+                type: 'response.function_call_arguments_delta',
+                item_id: newToolCall.id,
+                output_index: 1 + currentToolCallIndex,
+                call_id: newToolCall.call_id,
+                name: newToolCall.name,
+                delta: tc.function.arguments || '',
+              });
+            } else if (tc.function?.arguments) {
+              // tool_call 参数增量
+              const lastTc = toolCalls[toolCalls.length - 1];
+              if (lastTc && lastTc.status === 'in_progress') {
+                lastTc.arguments += tc.function.arguments;
+                writeSSEEvent(res, 'response.function_call_arguments_delta', {
+                  type: 'response.function_call_arguments_delta',
+                  item_id: lastTc.id,
+                  output_index: 1 + currentToolCallIndex,
+                  call_id: lastTc.call_id,
+                  delta: tc.function.arguments,
+                });
+              }
+            }
+          }
+        }
+
+        // 处理完成
+        if (finishReason === 'stop' || finishReason === 'tool_calls') {
+          finished = true;
+
+          // 标记所有 tool_calls 为完成
+          for (const tc of toolCalls) {
+            tc.status = 'completed';
+            writeSSEEvent(res, 'response.function_call_completed', {
+              type: 'response.function_call_completed',
+              item_id: tc.id,
+              output_index: 0,
+              call_id: tc.call_id,
+              name: tc.name,
+              arguments: tc.arguments,
+            });
+          }
+
+          // 构建 output 数组
+          const output: Array<Record<string, unknown>> = [];
+          if (text) {
+            output.push({
+              id: messageId,
+              type: 'message',
+              status: 'completed',
+              role: 'assistant',
+              content: [{ type: 'output_text', text, annotations: [] }],
+            });
+          }
+          output.push(...toolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function_call',
+            status: 'completed',
+            call_id: tc.call_id,
+            name: tc.name,
+            arguments: tc.arguments,
+          })));
+
+          // 记录 token 使用
+          if (usage) {
+            trackTokenUsage(modelId, {
+              prompt_tokens: usage.prompt_tokens,
+              completion_tokens: usage.completion_tokens,
+              total_tokens: usage.total_tokens,
+            });
+          } else {
+            // 估算 token
+            const estimatedOutputTokens = Math.ceil(text.length / 3);
+            trackTokenUsage(modelId, {
+              prompt_tokens: promptTokens,
+              completion_tokens: estimatedOutputTokens,
+              total_tokens: promptTokens + estimatedOutputTokens,
+            });
+          }
+
+          writeSSEEvent(res, 'response.completed', {
+            type: 'response.completed',
+            response: {
+              id: responseId,
+              object: 'response',
+              created_at: createdAt,
+              status: 'completed' as const,
+              model: modelName,
+              output,
+              usage: usage ? {
+                input_tokens: usage.prompt_tokens,
+                output_tokens: usage.completion_tokens,
+              } : null,
+              error: null,
+            },
+          });
+
+          writeSSE(res, 'data: [DONE]\n\n');
+          res.end();
+        }
+      }
+
+      // 如果循环正常结束但未收到 finish_reason，手动发送完成事件
+      if (!finished && !res.writableEnded) {
+        const output: Array<Record<string, unknown>> = [];
+        if (text) {
+          output.push({
+            id: messageId,
+            type: 'message',
+            status: 'completed',
+            role: 'assistant',
+            content: [{ type: 'output_text', text, annotations: [] }],
+          });
+        }
+
+        writeSSEEvent(res, 'response.completed', {
+          type: 'response.completed',
+          response: {
+            id: responseId,
+            object: 'response',
+            created_at: createdAt,
+            status: 'completed' as const,
+            model: modelName,
+            output,
+            usage: usage ? {
+              input_tokens: usage.prompt_tokens,
+              output_tokens: usage.completion_tokens,
+            } : null,
+            error: null,
+          },
+        });
+
+        writeSSE(res, 'data: [DONE]\n\n');
+        res.end();
+      }
+    } catch (err) {
+      console.error('[responses stream from chat] fatal:', err);
+      if (!res.writableEnded) res.end();
+    }
+  })();
+}
+
 // ========== 路由实现 ==========
 
 // GET /v1/models
@@ -888,12 +1113,19 @@ router.post('/v1/responses', async (req: Request, res: Response) => {
             tools,
           }, body, res, model.id);
         } else {
-          await streamOpenAIChat(provider, {
-            messages,
-            maxOutputTokens: maxTokens,
+          // openai-chat 类型模型，使用 Chat Completions API 并转换为 Responses 格式
+          const client = provider.client as OpenAI;
+          const promptTokens = estimateMessagesTokens(messages);
+          const stream = await client.chat.completions.create({
+            model: provider.modelName,
+            messages: messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+            max_tokens: maxTokens,
             temperature: chatBody.temperature as number | undefined,
-            tools,
-          }, res, model.id, estimateMessagesTokens(messages));
+            tools: tools ? tools.map(t => ({ type: 'function' as const, function: t.function })) : undefined,
+            stream: true,
+            stream_options: { include_usage: true },
+          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+          streamOpenAIChatAsResponses(stream, res, provider.modelName, model.id, promptTokens);
         }
         return;
       } catch (err) {
@@ -1289,12 +1521,19 @@ userRouter.post('/v1/responses', async (req: Request, res: Response) => {
             tools,
           }, body, res, model.id);
         } else {
-          await streamOpenAIChat(provider, {
-            messages,
-            maxOutputTokens: maxTokens,
+          // openai-chat 类型模型，使用 Chat Completions API 并转换为 Responses 格式
+          const client = provider.client as OpenAI;
+          const promptTokens = estimateMessagesTokens(messages);
+          const stream = await client.chat.completions.create({
+            model: provider.modelName,
+            messages: messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+            max_tokens: maxTokens,
             temperature: chatBody.temperature as number | undefined,
-            tools,
-          }, res, model.id, estimateMessagesTokens(messages));
+            tools: tools ? tools.map(t => ({ type: 'function' as const, function: t.function })) : undefined,
+            stream: true,
+            stream_options: { include_usage: true },
+          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+          streamOpenAIChatAsResponses(stream, res, provider.modelName, model.id, promptTokens);
         }
         return;
       } catch (err) {

@@ -198,6 +198,44 @@ export const fetchStats = async () => {
 // loadStats 是 fetchStats 的别名
 export const loadStats = fetchStats
 
+// ========== 锁定状态检查和自动解锁 ==========
+const LOCK_DURATION_MS = 10 * 60 * 1000 // 10 分钟
+
+// 检查并自动解锁过期的锁定
+export const checkAndRefreshLockStatus = async () => {
+  const now = Date.now()
+  const expiredModels = modelList.value.filter(
+    (model) => model.isLock > 0 && now - model.isLock > LOCK_DURATION_MS
+  )
+
+  if (expiredModels.length === 0) return
+
+  const username = localStorage.getItem('auth_username') || ''
+
+  // 并行解锁所有过期的模型
+  const unlockPromises = expiredModels.map(async (model) => {
+    try {
+      const res = await fetch(`/api/models/${model.id}/lock`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Username': username,
+        },
+        body: JSON.stringify({ isLock: 0 }),
+      }).then((r) => r.json())
+      if (res.success) {
+        console.log(`[自动解锁] 模型 ${model.name} 锁定已过期，已自动解锁`)
+        // 更新本地状态
+        model.isLock = 0
+      }
+    } catch (err) {
+      console.error(`[自动解锁] 模型 ${model.name} 解锁失败:`, err)
+    }
+  })
+
+  await Promise.all(unlockPromises)
+}
+
 // ========== 选择模型（图表切换） ==========
 export const selectModel = (id: number) => {
   // 切换选中状态：点击已选中的模型则取消选中
@@ -277,9 +315,13 @@ export const handleToggleLock = async (id: number) => {
   if (!model) return
   const newLockValue = model.isLock > 0 ? 0 : Date.now()
   try {
+    const username = localStorage.getItem('auth_username') || ''
     const res = await fetch(`/api/models/${id}/lock`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Username': username,
+      },
       body: JSON.stringify({ isLock: newLockValue }),
     }).then((r) => r.json())
     if (res.success) {

@@ -64,7 +64,17 @@
         <!-- 卡片主体 -->
         <div class="card-body">
           <!-- 标题（粗体，字体与下方模型名称一致） -->
-          <div class="card-title" :title="model.name">{{ model.name }}</div>
+          <div class="card-title">
+            <span :title="model.name" class="card-title-text">{{ model.name }}</span>
+            <el-button
+              class="copy-label-btn"
+              :icon="DocumentCopy"
+              size="small"
+              text
+              title="复制 Label"
+              @mousedown.stop
+              @click="handleCopyLabel" />
+          </div>
           <div class="card-row">
             <span class="card-label">模型名称:</span>
             <span class="card-value" :title="model.model_name">{{ model.model_name }}</span>
@@ -131,7 +141,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck } from '@element-plus/icons-vue'
+import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy } from '@element-plus/icons-vue'
 import type { Model, ModelForm } from '@/api/modelService'
 import type { ModelCardProps, ModelCardEmits } from './index'
 
@@ -248,6 +258,39 @@ const handleToggleLock = () => {
 
 const handleToggleDisable = () => {
   emit('toggle-disable', props.model.id)
+}
+
+// 复制模型 Label
+const handleCopyLabel = () => {
+  const text = props.model.name
+  // 优先使用现代 Clipboard API，支持 http 协议
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('模型名称已复制')
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+// 降级复制方法（支持 http 协议）
+const fallbackCopy = (text: string) => {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    ElMessage.success('模型名称已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+  document.body.removeChild(textarea)
 }
 
 const formatNumber = (num: number): string => {
