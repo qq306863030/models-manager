@@ -248,7 +248,6 @@ function streamOpenAIChatCompletion(
             total_tokens: usage.total_tokens,
           },
         });
-        console.log(`[tokenTracker] Stream usage from API:`, usage);
         trackTokenUsage(modelId, usage);
       } else if (textContent.length > 0) {
         // 厂商未返回 usage 时，使用估算值（中文约 1.5 字符/token，英文约 4 字符/token）
@@ -258,7 +257,6 @@ function streamOpenAIChatCompletion(
           completion_tokens: estimatedOutputTokens,
           total_tokens: promptTokens + estimatedOutputTokens,
         };
-        console.log(`[tokenTracker] No usage from API, estimated tokens: prompt=${promptTokens}, output=${estimatedOutputTokens}`);
         trackTokenUsage(modelId, estimatedUsage);
       }
 
@@ -333,7 +331,6 @@ function streamAnthropicMessages(
           completion_tokens: estimatedOutputTokens,
           total_tokens: promptTokens + estimatedOutputTokens,
         };
-        console.log(`[tokenTracker] No usage from Anthropic API, estimated tokens: prompt=${promptTokens}, output=${estimatedOutputTokens}`);
         trackTokenUsage(modelId, estimatedUsage);
       }
 

@@ -78,7 +78,6 @@ async function flush(): Promise<void> {
       return
     }
 
-    console.log(`[tokenTracker] Flushing ${currentQueue.length} records`)
 
     // 聚合：modelId × date → 累加 token
     const agg = new Map<string, TokenRecord>()
@@ -112,17 +111,14 @@ async function flush(): Promise<void> {
     const upsertMany = db.transaction((records: TokenRecord[]) => {
       for (const r of records) {
         const updateResult = updateStmt.run(r.inToken, r.outToken, r.totalToken, r.count, r.modelId, today)
-        console.log(`[tokenTracker] Upsert: modelId=${r.modelId}, date=${today}, updateChanges=${updateResult.changes}`);
         if (updateResult.changes === 0) {
           insertStmt.run(r.modelId, today, r.inToken, r.outToken, r.totalToken, r.count)
-          console.log(`[tokenTracker] Inserted new record for modelId=${r.modelId}`);
         }
       }
     })
 
     upsertMany(Array.from(agg.values()))
 
-    console.log(`[tokenTracker] Written stats:`, Array.from(agg.values()))
 
     // 唤醒所有等待者
     for (const item of currentQueue) {
@@ -133,7 +129,6 @@ async function flush(): Promise<void> {
     for (const item of currentQueue) {
       item.reject(err)
     }
-    console.error('[tokenTracker] Flush error:', err)
   } finally {
     isProcessing = false
     // 如果队列还有剩余，继续处理
@@ -152,9 +147,7 @@ export function trackTokenUsage(
   modelId: number | undefined,
   usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null,
 ): void {
-  console.log(`[tokenTracker] trackTokenUsage called: modelId=${modelId}, usage=`, usage);
   if (!usage || !modelId) {
-    console.log('[tokenTracker] Early return: !usage || !modelId');
     return;
   }
 
