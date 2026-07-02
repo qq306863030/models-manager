@@ -35,7 +35,7 @@ const BATCH_SIZE = 50;
 // 最大等待时间（ms）
 const FLUSH_INTERVAL = 500;
 
-// 获取今天的日期字符串 YYYY-MM-DD
+// 获取今天的日期字符串 YYYY-MM-DD（使用本地时区）
 function getTodayStr(): string {
   const now = new Date();
   const y = now.getFullYear();

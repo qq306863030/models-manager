@@ -140,12 +140,14 @@
               clearable
               style="flex: 1" />
             <el-button @click="generateApiKey">生成</el-button>
+            <el-button v-if="customApiKey" @click="copyText(customApiKey)">复制</el-button>
             <el-button @click="clearApiKey">清除</el-button>
           </div>
         </el-form-item>
         <el-form-item label="说明">
           <span class="api-key-hint">
-            如果填写了 API Key，调用接口时需要在 Header 中添加 <code>Authorization: Bearer {api_key}</code>
+            调用地址：{{ location.origin }}/admin/v1<br/>
+            调用接口时需要填写 apiKey
           </span>
         </el-form-item>
       </el-form>
@@ -259,11 +261,34 @@ const onDragEnd = () => {
   handleReorder(modelList.value)
 }
 
-// 复制文本
-const copyText = (text: string) => {
-  navigator.clipboard.writeText(text).then(() => {
+// 复制文本（支持 http 协议）
+const fallbackCopy = (text: string) => {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
     ElMessage.success('已复制到剪贴板')
-  })
+  } catch {
+    ElMessage.error('复制失败')
+  }
+  document.body.removeChild(textarea)
+}
+
+const copyText = (text: string) => {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
 }
 
 // 打开编辑弹窗
@@ -297,6 +322,7 @@ onMountedCallback()
 // 定时刷新统计数据和锁定状态（每 20 秒）
 let statsRefreshTimer: number | null = null
 onMounted(() => {
+  loadLockDuration()
   statsRefreshTimer = window.setInterval(() => {
     loadStats()
     checkAndRefreshLockStatus()

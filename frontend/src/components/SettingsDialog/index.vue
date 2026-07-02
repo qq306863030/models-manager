@@ -25,6 +25,15 @@
           controls-position="right"
           style="width: 100%" />
       </el-form-item>
+      <el-form-item label="锁定时间(秒)">
+        <el-input-number
+          v-model="formData.lock_duration"
+          :min="60"
+          :max="86400"
+          :step="60"
+          controls-position="right"
+          style="width: 100%" />
+      </el-form-item>
       <el-form-item class="shuoming">
         <div class="settings-hint">
           <el-icon><InfoFilled /></el-icon>
@@ -58,6 +67,7 @@ const formRef = ref<FormInstance>()
 const formData = reactive<UserSettings>({
   max_content_length: 0,
   max_token: 0,
+  lock_duration: 600,
 })
 
 // 加载设置
@@ -67,6 +77,7 @@ const loadSettings = async () => {
     if (res.success && res.data) {
       formData.max_content_length = res.data.max_content_length
       formData.max_token = res.data.max_token
+      formData.lock_duration = res.data.lock_duration || 600
     }
   } catch (e) {
     // ignore
@@ -96,6 +107,7 @@ const handleSubmit = async () => {
     const res = await updateUserSettings({
       max_content_length: formData.max_content_length,
       max_token: formData.max_token,
+      lock_duration: formData.lock_duration,
     })
     if (res.success) {
       ElMessage.success('设置已保存')

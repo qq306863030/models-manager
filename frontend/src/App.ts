@@ -12,6 +12,7 @@ import {
   type ModelRowForm,
 } from '@/api/modelService'
 import { getTokenStatsByModelIds, type TokenStat } from '@/api/tokenStatsService'
+import { getUserSettings } from '@/api/userSettingsService'
 import type { ModelLabelOption } from '@/components/AddModelDialog/index'
 
 // ========== 模型列表 ==========
@@ -128,7 +129,9 @@ export interface ModelStatSummary {
 
 export const modelStatMap = computed(() => {
   const map = new Map<number, ModelStatSummary>()
-  const today = new Date().toISOString().slice(0, 10) // 'YYYY-MM-DD'
+  // 使用本地时区获取今天的日期
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   for (const stat of allStats.value) {
     if (!map.has(stat.model_id)) {
@@ -199,13 +202,25 @@ export const fetchStats = async () => {
 export const loadStats = fetchStats
 
 // ========== 锁定状态检查和自动解锁 ==========
-const LOCK_DURATION_MS = 10 * 60 * 1000 // 10 分钟
+export const lockDurationMs = ref(600 * 1000) // 默认 600 秒
+
+// 加载锁定时间设置
+export const loadLockDuration = async () => {
+  try {
+    const res = await getUserSettings()
+    if (res.success && res.data) {
+      lockDurationMs.value = (res.data.lock_duration || 600) * 1000
+    }
+  } catch {
+    // ignore
+  }
+}
 
 // 检查并自动解锁过期的锁定
 export const checkAndRefreshLockStatus = async () => {
   const now = Date.now()
   const expiredModels = modelList.value.filter(
-    (model) => model.isLock > 0 && now - model.isLock > LOCK_DURATION_MS
+    (model) => model.isLock > 0 && now - model.isLock > lockDurationMs.value
   )
 
   if (expiredModels.length === 0) return
@@ -388,7 +403,7 @@ export const handleReorder = async (newList: Model[]) => {
 
 // ========== 代理接口弹窗 ==========
 export const apiDialogVisible = ref(false)
-export const proxyBaseUrl = ref(`http://localhost:${window.location.port || 11888}`)
+export const proxyBaseUrl = ref(window.location.origin)
 export const customApiKey = ref(localStorage.getItem('custom_api_key') || '')
 export const proxyEndpoints = [
   { method: 'GET',  path: '/v1/models',              desc: '获取模型列表（OpenAI 兼容）' },

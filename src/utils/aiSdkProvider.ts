@@ -35,8 +35,17 @@ export interface ModelRow {
   created_at: string;
 }
 
-// 锁定时长：10 分钟
-export const LOCK_DURATION_MS = 10 * 60 * 1000;
+// 锁定时长：从数据库读取，默认 10 分钟（600秒）
+import { getUserSettings } from '../config/database';
+
+export const LOCK_DURATION_MS = (() => {
+  try {
+    const settings = getUserSettings();
+    return (settings.lock_duration || 600) * 1000;
+  } catch {
+    return 600 * 1000;
+  }
+})();
 
 // ========== SDK 客户端类型 ==========
 export interface AIProvider {

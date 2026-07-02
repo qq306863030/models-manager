@@ -111,13 +111,14 @@ db.exec(`
     id INTEGER PRIMARY KEY CHECK (id = 1),
     max_content_length INTEGER DEFAULT 0,
     max_token INTEGER DEFAULT 0,
+    lock_duration INTEGER DEFAULT 600,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
 const settingsCount = db.prepare('SELECT COUNT(*) as count FROM user_settings').get() as { count: number };
 if (settingsCount.count === 0) {
-  db.prepare('INSERT INTO user_settings (id, max_content_length, max_token) VALUES (1, 0, 0)').run();
+  db.prepare('INSERT INTO user_settings (id, max_content_length, max_token, lock_duration) VALUES (1, 0, 0, 600)').run();
 }
 
 // 用户 API Key 表
@@ -154,6 +155,23 @@ export function verifyUserApiKey(username: string, apiKey: string): boolean {
 
 export function deleteUserApiKey(username: string): void {
   db.prepare('DELETE FROM user_api_keys WHERE username = ?').run(username);
+}
+
+// 获取用户设置
+export function getUserSettings(): { max_content_length: number; max_token: number; lock_duration: number } {
+  return db.prepare('SELECT max_content_length, max_token, lock_duration FROM user_settings WHERE id = 1').get() as { max_content_length: number; max_token: number; lock_duration: number };
+}
+
+// 保存用户设置
+export function saveUserSettings(max_content_length: number, max_token: number, lock_duration: number): void {
+  db.prepare('UPDATE user_settings SET max_content_length = ?, max_token = ?, lock_duration = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run(max_content_length, max_token, lock_duration);
+}
+
+// 为已存在的 user_settings 添加 lock_duration 列
+try {
+  db.exec('ALTER TABLE user_settings ADD COLUMN lock_duration INTEGER DEFAULT 600');
+} catch (e) {
+  // 列可能已存在，忽略错误
 }
 
 export default db;

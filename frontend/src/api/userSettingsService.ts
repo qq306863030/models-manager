@@ -3,6 +3,7 @@ import request from './models';
 export interface UserSettings {
   max_content_length: number;
   max_token: number;
+  lock_duration: number;
 }
 
 // 获取设置
