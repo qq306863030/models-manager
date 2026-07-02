@@ -56,11 +56,9 @@ db.exec(`
   )
 `);
 
-// 涓哄凡瀛樺湪鐨?users 琛屽姞鍏ユ柊瀛楁ķ
 try {
   db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
 } catch (e) {
-  // 瀛楁ķ鍙ď兘宸插瓨鍦★紝蹇界暐閿欒
 }
 try {
   db.exec(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user' CHECK(role IN ('super_admin', 'admin', 'user'))`);
@@ -106,7 +104,6 @@ db.exec(`
   )
 `);
 
-// 纭ķ繚 user_settings 琛ㄥ彧鏈変竴鏉¤Ę褰?
 const settingsCount = db.prepare('SELECT COUNT(*) as count FROM user_settings').get() as { count: number };
 if (settingsCount.count === 0) {
   db.prepare('INSERT INTO user_settings (id, max_content_length, max_token) VALUES (1, 0, 0)').run();
