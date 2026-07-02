@@ -406,13 +406,13 @@ export const apiDialogVisible = ref(false)
 export const proxyBaseUrl = ref(window.location.origin)
 export const customApiKey = ref(localStorage.getItem('custom_api_key') || '')
 export const proxyEndpoints = [
-  { method: 'GET',  path: '/v1/models',              desc: '获取模型列表（OpenAI 兼容）' },
-  { method: 'POST', path: '/v1/chat/completions',    desc: '聊天补全（Chat Completions / Anthropic Messages / Responses）' },
-  { method: 'POST', path: '/v1/responses',           desc: 'Responses API（自动转为 Chat Completion 请求）' },
-  { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（兼容）' },
-  { method: 'POST', path: '/api/show',               desc: '获取模型详情（兼容）' },
+  { method: 'GET',  path: '/v1/models',              desc: '获取模型列表' },
+  { method: 'POST', path: '/v1/chat/completions',    desc: '聊天补全' },
+  { method: 'POST', path: '/v1/responses',           desc: 'Responses API' },
+  { method: 'GET',  path: '/api/tags',               desc: '获取模型列表' },
+  { method: 'POST', path: '/api/show',               desc: '获取模型详情' },
   { method: 'GET',  path: '/api/version',            desc: '版本信息' },
-  { method: 'GET',  path: '/v1/test',    desc: '测试接口，支持 model 和 content 参数' },
+  { method: 'GET',  path: '/v1/test',    desc: '测试接口' },
 ]
 
 // 用户名前缀的代理地址
