@@ -375,6 +375,12 @@
         "content_length": "262144",
         "max_token": "32000",
         "capabilities": ["completion", "tools", "thinking", "vision"]
+      },
+      {
+        "model": "kimi-k2.7",
+        "content_length": "262144",
+        "max_token": "262144",
+        "capabilities": ["completion", "tools", "thinking", "vision"]
       }
     ]
   }

@@ -31,6 +31,7 @@ import {
   generateRandomString,
 } from '../utils/proxy';
 import { trackTokenUsage } from '../utils/tokenTracker';
+import { ThinkingParser, stripThinkingTags } from '../utils/thinking';
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages';
 import OpenAI from 'openai';
@@ -210,6 +211,8 @@ function streamOpenAIChatCompletion(
   let usage: OpenAI.CompletionUsage | null = null;
   let textContent = ''; // 用于估算输出 token
 
+  console.log('[chat stream] Started streaming for model:', modelName);
+
   (async () => {
     try {
       for await (const chunk of stream) {
@@ -217,24 +220,25 @@ function streamOpenAIChatCompletion(
 
         if (chunk.usage) usage = chunk.usage;
 
-        // 收集文本内容用于估算
-        const deltaContent = chunk.choices[0]?.delta?.content;
-        if (typeof deltaContent === 'string') {
-          textContent += deltaContent;
+        // 直接转发原始 chunk，不做处理
+        if (chunk.choices && chunk.choices[0]) {
+          textContent += chunk.choices[0].delta?.content || '';
+
+          writeSSE(res, {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: modelName,
+            choices: chunk.choices,
+          });
+        } else if (chunk.usage) {
+          // 只有 usage 的 chunk，不转发
         }
-
-        const delta = chunk.choices[0]?.delta || {};
-
-        writeSSE(res, {
-          id: completionId,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: modelName,
-          choices: [{ index: 0, delta, finish_reason: chunk.choices[0]?.finish_reason ?? null }],
-        });
       }
 
-      // 记录统计：优先使用 API 返回的 usage，否则使用估算值
+      console.log('[chat stream] Finished, text length:', textContent.length);
+
+      // 发送 usage
       if (usage) {
         writeSSE(res, {
           id: completionId,
@@ -250,7 +254,6 @@ function streamOpenAIChatCompletion(
         });
         trackTokenUsage(modelId, usage);
       } else if (textContent.length > 0) {
-        // 厂商未返回 usage 时，使用估算值（中文约 1.5 字符/token，英文约 4 字符/token）
         const estimatedOutputTokens = Math.ceil(textContent.length / 3);
         const estimatedUsage = {
           prompt_tokens: promptTokens,
@@ -426,6 +429,11 @@ async function callOpenAIChat(
     stream: false,
   });
 
+  // 移除响应中的 thinking 标签
+  if (response.choices[0]?.message?.content) {
+    response.choices[0].message.content = stripThinkingTags(response.choices[0].message.content);
+  }
+
   return response;
 }
 
@@ -539,6 +547,12 @@ async function callOpenAIResponses(
   });
 
   const message: Record<string, unknown> = { role: 'assistant', content: text || null };
+
+  // 移除 thinking 标签
+  if (message.content && typeof message.content === 'string') {
+    message.content = stripThinkingTags(message.content) || null;
+  }
+
   if (toolCalls.length > 0) {
     message.tool_calls = toolCalls;
     message.content = null;
@@ -706,7 +720,6 @@ function streamOpenAIChatAsResponses(
 ) {
   const responseId = `resp_${generateRandomString(12)}`;
   const createdAt = Math.floor(Date.now() / 1000);
-  const completionId = `chatcmpl-${generateRandomString(12)}`;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -748,8 +761,10 @@ function streamOpenAIChatAsResponses(
 
         if (chunk.usage) usage = chunk.usage;
 
-        const delta = chunk.choices[0]?.delta || {};
-        const finishReason = chunk.choices[0]?.finish_reason;
+        if (!chunk.choices || !chunk.choices[0]) continue;
+
+        const delta = chunk.choices[0].delta || {};
+        const finishReason = chunk.choices[0].finish_reason;
 
         // 处理文本内容
         if (typeof delta.content === 'string' && delta.content) {

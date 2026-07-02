@@ -4,7 +4,7 @@ import fs from 'fs';
 
 const dbPath = path.join(__dirname, '../../data/database.db');
 
-// 纭ķ繚 data 鐩ķ綍瀛樺湪
+
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -12,7 +12,6 @@ if (!fs.existsSync(dataDir)) {
 
 const db: DatabaseType = new Database(dbPath);
 
-// 鍒濆簱鍖栨暟鎹ķ簱琛?
 db.exec(`
   CREATE TABLE IF NOT EXISTS models (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

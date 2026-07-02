@@ -23,7 +23,10 @@ A lightweight personal LLM management tool providing unified proxy interfaces wi
 - Model enable/disable control
 - Drag-and-drop model sorting
 
-### 🔧 Global Settings
+### � Model Configuration Parameters Reference
+- Model configuration parameters reference [https://models.dev/api.json](https://models.dev/api.json)
+
+### �🔧 Global Settings
 - Unified max content length and max tokens settings
 - Settings value > 0 overrides all model parameters
 - Settings value = 0 uses model's own configuration
@@ -46,6 +49,13 @@ A lightweight personal LLM management tool providing unified proxy interfaces wi
 ```bash
 npm install
 ```
+
+### Default Account
+
+- **Username**: `admin`
+- **Password**: `admin`
+
+> Please change the password after first login!
 
 ### Development Mode
 

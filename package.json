@@ -40,7 +40,6 @@
   "files": [
     "dist/",
     "bin/",
-    "data/",
     "ecosystem.config.js"
   ],
   "dependencies": {
