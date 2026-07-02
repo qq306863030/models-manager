@@ -233,6 +233,7 @@ import {
   copyEndpointWithKey,
   onMountedCallback,
   loadStats,
+  loadLockDuration,
   checkAndRefreshLockStatus,
 } from '@/App'
 
