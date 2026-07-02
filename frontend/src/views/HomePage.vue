@@ -147,7 +147,7 @@
         <el-form-item label="说明">
           <div class="api-key-hint">
             <div>调用地址：<code class="address-text" @click="copyText(currentOrigin + '/admin/v1')">{{ currentOrigin }}/admin/v1</code><el-icon class="copy-icon-small" @click="copyText(currentOrigin + '/admin/v1')"><CopyDocument /></el-icon></div>
-            <div>调用接口时需要填写 apiKey</div>
+            <div>API Key：如果生成了Key，调用接口时需要填写 apiKey，如果为空则不需要验证</div>
           </div>
         </el-form-item>
       </el-form>
@@ -498,6 +498,9 @@ onUnmounted(() => {
 }
 
 .api-key-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: baseline;
   font-size: 13px;
   color: #606266;
   line-height: 1.8;
