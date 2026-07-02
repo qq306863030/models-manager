@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { ElMessage } from 'element-plus';
 
 const request = axios.create({
   baseURL: '/api',
@@ -30,7 +29,7 @@ request.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    ElMessage.error(error.response?.data?.message || '请求失败');
+    // 不在这里自动显示错误消息，由各组件自行处理
     return Promise.reject(error);
   }
 );

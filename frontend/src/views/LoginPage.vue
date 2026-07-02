@@ -125,7 +125,8 @@ const handleLogin = async () => {
       refreshCaptcha()
     }
   } catch (error: any) {
-    ElMessage.error(error?.message || '登录失败')
+    const serverMsg = error?.response?.data?.message || error?.response?.data?.error?.message
+    ElMessage.error(serverMsg || '登录失败')
     refreshCaptcha()
   } finally {
     loading.value = false

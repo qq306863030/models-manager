@@ -406,8 +406,11 @@ export const userProxyBaseUrl = computed(() => {
   return `${proxyBaseUrl.value}/${username}`
 })
 
-// 生成随机 API Key
-export const generateApiKey = () => {
+// 获取用户名
+export const getUsername = () => localStorage.getItem('auth_username') || 'default'
+
+// 生成随机 API Key（异步，同时保存到后端）
+export const generateApiKey = async () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let key = 'sk-'
   for (let i = 0; i < 48; i++) {
@@ -415,12 +418,68 @@ export const generateApiKey = () => {
   }
   customApiKey.value = key
   localStorage.setItem('custom_api_key', key)
+
+  // 保存到后端
+  try {
+    await fetch('/api/settings/api-key', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Username': getUsername(),
+      },
+      body: JSON.stringify({ api_key: key }),
+    })
+  } catch {
+    console.error('Failed to save API key to backend')
+  }
 }
 
-// 清除 API Key
-export const clearApiKey = () => {
+// 清除 API Key（异步，同时清除后端）
+export const clearApiKey = async () => {
   customApiKey.value = ''
   localStorage.removeItem('custom_api_key')
+
+  // 清除后端
+  try {
+    await fetch('/api/settings/api-key', {
+      method: 'DELETE',
+      headers: {
+        'X-Username': getUsername(),
+      },
+    })
+  } catch {
+    console.error('Failed to clear API key from backend')
+  }
+}
+
+// 从后端加载 API Key
+export const loadApiKeyStatus = async () => {
+  try {
+    const res = await fetch('/api/settings/api-key', {
+      headers: { 'X-Username': getUsername() },
+    })
+    const data = await res.json()
+    if (data.success) {
+      if (data.api_key) {
+        // 后端有 Key，更新本地存储和状态
+        customApiKey.value = data.api_key
+        localStorage.setItem('custom_api_key', data.api_key)
+      } else {
+        // 后端没有 Key，清除本地
+        customApiKey.value = ''
+        localStorage.removeItem('custom_api_key')
+      }
+    }
+  } catch {
+    console.error('Failed to load API key status')
+  }
+}
+
+// 打开代理接口弹窗
+export const openApiDialog = async () => {
+  apiDialogVisible.value = true
+  // 每次打开都从后端获取最新状态
+  await loadApiKeyStatus()
 }
 
 // 复制带 API Key 的完整地址
@@ -432,8 +491,6 @@ export const copyEndpointWithKey = (path: string): string => {
   }
   return fullUrl
 }
-
-export const openApiDialog = () => { apiDialogVisible.value = true }
 
 // ========== 生命周期 ==========
 export const onMountedCallback = async () => {
@@ -447,5 +504,7 @@ export const onMountedCallback = async () => {
   } catch {
     // 读取失败，保持默认端口
   }
+  // 加载 API Key 状态
+  await loadApiKeyStatus()
   await fetchModels()
 }

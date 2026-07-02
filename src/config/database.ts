@@ -109,4 +109,40 @@ if (settingsCount.count === 0) {
   db.prepare('INSERT INTO user_settings (id, max_content_length, max_token) VALUES (1, 0, 0)').run();
 }
 
+// 用户 API Key 表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    api_key TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// ========== API Key 操作函数 ==========
+export function saveUserApiKey(username: string, apiKey: string): void {
+  const existing = db.prepare('SELECT id FROM user_api_keys WHERE username = ?').get(username);
+  if (existing) {
+    db.prepare('UPDATE user_api_keys SET api_key = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?').run(apiKey, username);
+  } else {
+    db.prepare('INSERT INTO user_api_keys (username, api_key) VALUES (?, ?)').run(username, apiKey);
+  }
+}
+
+export function getUserApiKey(username: string): string | null {
+  const row = db.prepare('SELECT api_key FROM user_api_keys WHERE username = ?').get(username) as { api_key: string } | undefined;
+  return row?.api_key || null;
+}
+
+export function verifyUserApiKey(username: string, apiKey: string): boolean {
+  const stored = getUserApiKey(username);
+  if (!stored) return false;
+  return stored === apiKey;
+}
+
+export function deleteUserApiKey(username: string): void {
+  db.prepare('DELETE FROM user_api_keys WHERE username = ?').run(username);
+}
+
 export default db;

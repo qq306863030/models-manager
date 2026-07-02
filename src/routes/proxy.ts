@@ -35,6 +35,7 @@ import { ThinkingParser, stripThinkingTags } from '../utils/thinking';
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages';
 import OpenAI from 'openai';
+import { getUserApiKey } from '../config/database';
 
 const router = Router();
 const MAX_RESPONSE_TOKENS = 64000;
@@ -235,8 +236,6 @@ function streamOpenAIChatCompletion(
           // 只有 usage 的 chunk，不转发
         }
       }
-
-      console.log('[chat stream] Finished, text length:', textContent.length);
 
       // 发送 usage
       if (usage) {
@@ -720,58 +719,214 @@ function streamOpenAIChatAsResponses(
 ) {
   const responseId = `resp_${generateRandomString(12)}`;
   const createdAt = Math.floor(Date.now() / 1000);
+  const messageItemId = `msg_${generateRandomString(12)}`;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  // 发送 response.created 事件
-  writeSSEEvent(res, 'response.created', {
-    type: 'response.created',
-    response: {
+  let text = '';
+  let messageStarted = false;
+  let messageDone = false;
+  let completed = false;
+  let usage: OpenAI.CompletionUsage | null = null;
+  let chunkCount = 0;
+
+  // 响应基础对象
+  const responseBase = (status: 'in_progress' | 'completed' = 'in_progress') => {
+    const base = {
       id: responseId,
       object: 'response',
       created_at: createdAt,
-      status: 'in_progress' as const,
+      status,
+      error: null,
+      incomplete_details: null,
       model: modelName,
       output: [],
-      error: null,
-    },
+    };
+    if (status === 'completed') {
+      return {
+        ...base,
+        output: [{
+          id: messageItemId,
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [{
+            type: 'output_text',
+            text,
+            annotations: [],
+          }],
+        }],
+        usage: usage ? {
+          input_tokens: usage.prompt_tokens,
+          output_tokens: usage.completion_tokens,
+          total_tokens: usage.total_tokens,
+        } : {
+          input_tokens: promptTokens,
+          output_tokens: Math.ceil(text.length / 3),
+          total_tokens: promptTokens + Math.ceil(text.length / 3),
+        },
+      };
+    }
+    return base;
+  };
+
+  // 发送初始事件
+  writeSSEEvent(res, 'response.created', {
+    type: 'response.created',
+    response: responseBase('in_progress'),
+  });
+  writeSSEEvent(res, 'response.in_progress', {
+    type: 'response.in_progress',
+    response: responseBase('in_progress'),
   });
 
-  let text = '';
-  let messageId = `msg_${generateRandomString(12)}`;
-  let toolCalls: Array<{
-    id: string;
-    type: 'function_call';
-    status: 'in_progress' | 'completed';
-    call_id: string;
-    name: string;
-    arguments: string;
-  }> = [];
-  let currentToolCallIndex = -1;
-  let usage: OpenAI.CompletionUsage | null = null;
-  let finished = false;
+  // 开始消息
+  const startMessage = () => {
+    if (messageStarted) return;
+    messageStarted = true;
+
+    writeSSEEvent(res, 'response.output_item.added', {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: {
+        id: messageItemId,
+        type: 'message',
+        status: 'in_progress',
+        role: 'assistant',
+        content: [],
+      },
+    });
+    writeSSEEvent(res, 'response.content_part.added', {
+      type: 'response.content_part.added',
+      item_id: messageItemId,
+      output_index: 0,
+      content_index: 0,
+      part: {
+        type: 'output_text',
+        text: '',
+        annotations: [],
+      },
+    });
+  };
+
+  // 完成消息
+  const finishMessage = () => {
+    if (!messageStarted || messageDone) return;
+    messageDone = true;
+
+    writeSSEEvent(res, 'response.output_text.done', {
+      type: 'response.output_text.done',
+      item_id: messageItemId,
+      output_index: 0,
+      content_index: 0,
+      text,
+    });
+    writeSSEEvent(res, 'response.content_part.done', {
+      type: 'response.content_part.done',
+      item_id: messageItemId,
+      output_index: 0,
+      content_index: 0,
+      part: {
+        type: 'output_text',
+        text,
+        annotations: [],
+      },
+    });
+    writeSSEEvent(res, 'response.output_item.done', {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        id: messageItemId,
+        type: 'message',
+        status: 'completed',
+        role: 'assistant',
+        content: [{
+          type: 'output_text',
+          text,
+          annotations: [],
+        }],
+      },
+    });
+  };
+
+  // 完成响应
+  const completeResponse = () => {
+    if (completed) return;
+    completed = true;
+    finishMessage();
+
+    // 记录 token 使用
+    if (usage) {
+      trackTokenUsage(modelId, {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      });
+    } else {
+      // 估算 token
+      const estimatedOutputTokens = Math.ceil(text.length / 3);
+      trackTokenUsage(modelId, {
+        prompt_tokens: promptTokens,
+        completion_tokens: estimatedOutputTokens,
+        total_tokens: promptTokens + estimatedOutputTokens,
+      });
+    }
+
+    const response = {
+      ...responseBase('completed'),
+      output: [{
+        id: messageItemId,
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{
+          type: 'output_text',
+          text,
+          annotations: [],
+        }],
+      }],
+      output_text: text,
+      usage: usage ? {
+        input_tokens: usage.prompt_tokens,
+        output_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+      } : {
+        input_tokens: promptTokens,
+        output_tokens: Math.ceil(text.length / 3),
+        total_tokens: promptTokens + Math.ceil(text.length / 3),
+      },
+    };
+    writeSSEEvent(res, 'response.completed', {
+      type: 'response.completed',
+      response,
+    });
+    res.write('data: [DONE]\n\n');
+    res.end();
+  };
 
   (async () => {
     try {
       for await (const chunk of stream) {
-        if (finished || res.writableEnded) break;
+        if (completed || res.writableEnded) break;
 
         if (chunk.usage) usage = chunk.usage;
 
         if (!chunk.choices || !chunk.choices[0]) continue;
 
+        chunkCount++;
         const delta = chunk.choices[0].delta || {};
         const finishReason = chunk.choices[0].finish_reason;
 
         // 处理文本内容
         if (typeof delta.content === 'string' && delta.content) {
+          startMessage();
           text += delta.content;
           writeSSEEvent(res, 'response.output_text.delta', {
             type: 'response.output_text.delta',
-            item_id: messageId,
+            item_id: messageItemId,
             output_index: 0,
             content_index: 0,
             delta: delta.content,
@@ -780,152 +935,19 @@ function streamOpenAIChatAsResponses(
 
         // 处理 tool_calls
         if (delta.tool_calls && delta.tool_calls.length > 0) {
-          for (const tc of delta.tool_calls) {
-            if (tc.function?.name) {
-              // 新的 tool_call 开始
-              currentToolCallIndex++;
-              const newToolCall = {
-                id: `fc_${generateRandomString(12)}`,
-                type: 'function_call' as const,
-                status: 'in_progress' as const,
-                call_id: tc.id || `call_${generateRandomString(12)}`,
-                name: tc.function.name,
-                arguments: tc.function.arguments || '',
-              };
-              toolCalls.push(newToolCall);
-              writeSSEEvent(res, 'response.function_call_arguments_delta', {
-                type: 'response.function_call_arguments_delta',
-                item_id: newToolCall.id,
-                output_index: 1 + currentToolCallIndex,
-                call_id: newToolCall.call_id,
-                name: newToolCall.name,
-                delta: tc.function.arguments || '',
-              });
-            } else if (tc.function?.arguments) {
-              // tool_call 参数增量
-              const lastTc = toolCalls[toolCalls.length - 1];
-              if (lastTc && lastTc.status === 'in_progress') {
-                lastTc.arguments += tc.function.arguments;
-                writeSSEEvent(res, 'response.function_call_arguments_delta', {
-                  type: 'response.function_call_arguments_delta',
-                  item_id: lastTc.id,
-                  output_index: 1 + currentToolCallIndex,
-                  call_id: lastTc.call_id,
-                  delta: tc.function.arguments,
-                });
-              }
-            }
-          }
+          // TODO: 处理 tool_calls
         }
 
         // 处理完成
-        if (finishReason === 'stop' || finishReason === 'tool_calls') {
-          finished = true;
-
-          // 标记所有 tool_calls 为完成
-          for (const tc of toolCalls) {
-            tc.status = 'completed';
-            writeSSEEvent(res, 'response.function_call_completed', {
-              type: 'response.function_call_completed',
-              item_id: tc.id,
-              output_index: 0,
-              call_id: tc.call_id,
-              name: tc.name,
-              arguments: tc.arguments,
-            });
-          }
-
-          // 构建 output 数组
-          const output: Array<Record<string, unknown>> = [];
-          if (text) {
-            output.push({
-              id: messageId,
-              type: 'message',
-              status: 'completed',
-              role: 'assistant',
-              content: [{ type: 'output_text', text, annotations: [] }],
-            });
-          }
-          output.push(...toolCalls.map((tc) => ({
-            id: tc.id,
-            type: 'function_call',
-            status: 'completed',
-            call_id: tc.call_id,
-            name: tc.name,
-            arguments: tc.arguments,
-          })));
-
-          // 记录 token 使用
-          if (usage) {
-            trackTokenUsage(modelId, {
-              prompt_tokens: usage.prompt_tokens,
-              completion_tokens: usage.completion_tokens,
-              total_tokens: usage.total_tokens,
-            });
-          } else {
-            // 估算 token
-            const estimatedOutputTokens = Math.ceil(text.length / 3);
-            trackTokenUsage(modelId, {
-              prompt_tokens: promptTokens,
-              completion_tokens: estimatedOutputTokens,
-              total_tokens: promptTokens + estimatedOutputTokens,
-            });
-          }
-
-          writeSSEEvent(res, 'response.completed', {
-            type: 'response.completed',
-            response: {
-              id: responseId,
-              object: 'response',
-              created_at: createdAt,
-              status: 'completed' as const,
-              model: modelName,
-              output,
-              usage: usage ? {
-                input_tokens: usage.prompt_tokens,
-                output_tokens: usage.completion_tokens,
-              } : null,
-              error: null,
-            },
-          });
-
-          writeSSE(res, 'data: [DONE]\n\n');
-          res.end();
+        if (finishReason) {
+          completeResponse();
+          return;
         }
       }
 
-      // 如果循环正常结束但未收到 finish_reason，手动发送完成事件
-      if (!finished && !res.writableEnded) {
-        const output: Array<Record<string, unknown>> = [];
-        if (text) {
-          output.push({
-            id: messageId,
-            type: 'message',
-            status: 'completed',
-            role: 'assistant',
-            content: [{ type: 'output_text', text, annotations: [] }],
-          });
-        }
-
-        writeSSEEvent(res, 'response.completed', {
-          type: 'response.completed',
-          response: {
-            id: responseId,
-            object: 'response',
-            created_at: createdAt,
-            status: 'completed' as const,
-            model: modelName,
-            output,
-            usage: usage ? {
-              input_tokens: usage.prompt_tokens,
-              output_tokens: usage.completion_tokens,
-            } : null,
-            error: null,
-          },
-        });
-
-        writeSSE(res, 'data: [DONE]\n\n');
-        res.end();
+      // 如果循环正常结束但未收到 finish_reason
+      if (!completed) {
+        completeResponse();
       }
     } catch (err) {
       console.error('[responses stream from chat] fatal:', err);
@@ -1287,6 +1309,39 @@ userRouter.use((req: Request, _res: Response, next) => {
     reqWithUser.proxyUsername = username;
     reqWithUser.proxyUserId = getUserIdByUsername(username) ?? undefined;
   }
+  next();
+});
+
+// API Key 验证中间件
+userRouter.use((req: Request, res: Response, next) => {
+  const username = (req.params as Record<string, string>).username;
+  if (!username) return next();
+
+  const storedApiKey = getUserApiKey(username);
+  if (!storedApiKey) {
+    // 未设置 API Key，允许访问
+    return next();
+  }
+
+  // 获取请求中的 API Key
+  const authHeader = req.headers.authorization;
+  let requestApiKey: string | null = null;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    requestApiKey = authHeader.slice(7);
+  }
+
+  if (!requestApiKey || requestApiKey !== storedApiKey) {
+    res.status(401).json({
+      error: {
+        message: 'Invalid API key',
+        type: 'authentication_error',
+        code: 'invalid_api_key',
+      },
+    });
+    return;
+  }
+
   next();
 });
 
