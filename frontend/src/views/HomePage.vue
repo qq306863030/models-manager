@@ -146,7 +146,7 @@
         </el-form-item>
         <el-form-item label="说明">
           <span class="api-key-hint">
-            调用地址：{{ location.origin }}/admin/v1<br/>
+            调用地址：http://localhost:11888/admin/v1<br/>
             调用接口时需要填写 apiKey
           </span>
         </el-form-item>
