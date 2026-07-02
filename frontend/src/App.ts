@@ -407,7 +407,7 @@ export const proxyBaseUrl = ref(window.location.origin)
 export const customApiKey = ref(localStorage.getItem('custom_api_key') || '')
 export const proxyEndpoints = [
   { method: 'GET',  path: '/v1/models',              desc: '获取模型列表' },
-  { method: 'POST', path: '/v1/chat/completions',    desc: '聊天补全' },
+  { method: 'POST', path: '/v1/chat/completions',    desc: 'Chat Completions API' },
   { method: 'POST', path: '/v1/responses',           desc: 'Responses API' },
   { method: 'GET',  path: '/api/tags',               desc: '获取模型列表' },
   { method: 'POST', path: '/api/show',               desc: '获取模型详情' },
