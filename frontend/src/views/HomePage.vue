@@ -130,8 +130,8 @@
     <!-- ========== 查看接口弹窗 ========== -->
     <el-dialog v-model="apiDialogVisible" title="代理接口地址" width="800px" class="api-dialog">
       <!-- API Key 配置 -->
-      <el-form label-width="100px" class="api-key-form">
-        <el-form-item label="API Key">
+      <el-form label-width="100px" class="api-key-form" style="margin-bottom: 0px;">
+        <el-form-item label="API Key" style="margin-bottom: 0px;">
           <div class="api-key-row">
             <el-input
               v-model="customApiKey"
@@ -144,15 +144,15 @@
             <el-button @click="clearApiKey">清除</el-button>
           </div>
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item label="说明" style="align-items: baseline;">
           <div class="api-key-hint">
             <div>调用地址：<code class="address-text" @click="copyText(currentOrigin + '/admin/v1')">{{ currentOrigin }}/admin/v1</code><el-icon class="copy-icon-small" @click="copyText(currentOrigin + '/admin/v1')"><CopyDocument /></el-icon></div>
-            <div>API Key：如果生成了Key，调用接口时需要填写 apiKey，如果为空则不需要验证</div>
+            <div>如果生成了Key，调用接口时需要填写 apiKey，如果为空则不需要验证</div>
           </div>
         </el-form-item>
       </el-form>
 
-      <el-divider />
+      <el-divider style="margin: 15px 0;" />
 
       <!-- 接口列表 -->
       <el-table :data="proxyEndpoints" stripe size="small" class="api-table">
