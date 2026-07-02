@@ -409,9 +409,9 @@ export const proxyEndpoints = [
   { method: 'GET',  path: '/v1/models',              desc: '获取模型列表（OpenAI 兼容）' },
   { method: 'POST', path: '/v1/chat/completions',    desc: '聊天补全（Chat Completions / Anthropic Messages / Responses）' },
   { method: 'POST', path: '/v1/responses',           desc: 'Responses API（自动转为 Chat Completion 请求）' },
-  { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（Ollama 兼容）' },
-  { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
-  { method: 'GET',  path: '/api/version',            desc: 'Ollama 版本信息' },
+  { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（兼容）' },
+  { method: 'POST', path: '/api/show',               desc: '获取模型详情（兼容）' },
+  { method: 'GET',  path: '/api/version',            desc: '版本信息' },
   { method: 'GET',  path: '/v1/test',    desc: '测试接口，支持 model 和 content 参数' },
 ]
 

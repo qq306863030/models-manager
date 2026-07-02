@@ -163,7 +163,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="完整地址" min-width="0">
+        <el-table-column label="完整地址" min-width="0" align="center">
           <template #default="{ row }">
             <div class="url-cell">
               <el-icon class="copy-icon" @click="copyText(copyEndpointWithKey(row.path))">
@@ -173,7 +173,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="说明" min-width="0">
+        <el-table-column label="说明" width="300" align="center">
           <template #default="{ row }">
             <span class="endpoint-desc">{{ row.desc }}</span>
           </template>
