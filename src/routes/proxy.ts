@@ -174,7 +174,11 @@ async function tryModelsSequentially<T>(
     } catch (err) {
       const error = err as Error & { status?: number; statusCode?: number };
       const status = error.status || error.statusCode || 500;
-      console.error(`[proxy] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+      console.error(`[proxy] Model "${model.name}" failed (${status}): ${(err as Error).message}`, {
+        error: err,
+        model: { id: model.id, name: model.name, api_format: model.api_format },
+        requestModelName,
+      });
       db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(now, model.id);
     }
   }
@@ -1026,7 +1030,11 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
-        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`, {
+        error: err,
+        model: { id: model.id, name: model.name, api_format: model.api_format },
+        requestModelName,
+      });
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
         // 如果是流式响应且 headers 已发送（已开始返回数据），无法切换到其他模型
@@ -1035,8 +1043,11 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
           return;
         }
         if (idx < ordered.length) continue;
-
+        
+        // 输出完整的错误信息到控制台
+        console.error(`[chat stream] All models failed. Last error:`, err);
         res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
+
         return;
       }
     }
@@ -1173,6 +1184,10 @@ router.post('/v1/responses', async (req: Request, res: Response) => {
 
         if (res.headersSent) return;
         if (idx < ordered.length) continue;
+        
+        // 输出完整的错误信息到控制台
+        console.error(`[chat stream] All models failed. Last error:`, err);
+        res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
 
         res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
         return;
@@ -1472,7 +1487,11 @@ userRouter.post('/v1/chat/completions', async (req: Request, res: Response) => {
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
-        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`, {
+        error: err,
+        model: { id: model.id, name: model.name, api_format: model.api_format },
+        requestModelName,
+      });
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
         if (isStream && res.headersSent) {
@@ -1480,6 +1499,10 @@ userRouter.post('/v1/chat/completions', async (req: Request, res: Response) => {
           return;
         }
         if (idx < ordered.length) continue;
+        
+        // 输出完整的错误信息到控制台
+        console.error(`[chat stream] All models failed. Last error:`, err);
+        res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
 
         res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
         return;
@@ -1614,6 +1637,10 @@ userRouter.post('/v1/responses', async (req: Request, res: Response) => {
 
         if (res.headersSent) return;
         if (idx < ordered.length) continue;
+        
+        // 输出完整的错误信息到控制台
+        console.error(`[chat stream] All models failed. Last error:`, err);
+        res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
 
         res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
         return;
