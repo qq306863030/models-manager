@@ -173,7 +173,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="说明" width="300" align="center">
+        <el-table-column label="说明" width="180" header-align="center" align="left">
           <template #default="{ row }">
             <span class="endpoint-desc">{{ row.desc }}</span>
           </template>
