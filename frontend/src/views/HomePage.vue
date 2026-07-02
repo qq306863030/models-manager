@@ -145,10 +145,10 @@
           </div>
         </el-form-item>
         <el-form-item label="说明">
-          <span class="api-key-hint">
-            调用地址：{{ currentOrigin }}/admin/v1<br/>
-            调用接口时需要填写 apiKey
-          </span>
+          <div class="api-key-hint">
+            <div>调用地址：<code class="address-text" @click="copyText(currentOrigin + '/admin/v1')">{{ currentOrigin }}/admin/v1</code><el-icon class="copy-icon-small" @click="copyText(currentOrigin + '/admin/v1')"><CopyDocument /></el-icon></div>
+            <div>调用接口时需要填写 apiKey</div>
+          </div>
         </el-form-item>
       </el-form>
 
@@ -190,7 +190,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -492,6 +492,38 @@ onUnmounted(() => {
   .endpoint-desc {
     font-size: 12px;
     color: #909399;
+  }
+}
+
+.api-key-hint {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
+
+  .address-text {
+    color: #409eff;
+    cursor: pointer;
+    padding: 2px 6px;
+    background: #ecf5ff;
+    border-radius: 4px;
+    font-size: 12px;
+
+    &:hover {
+      color: #66b1ff;
+      background: #d9ecff;
+    }
+  }
+
+  .copy-icon-small {
+    margin-left: 6px;
+    cursor: pointer;
+    color: #909399;
+    font-size: 14px;
+    vertical-align: middle;
+
+    &:hover {
+      color: #409eff;
+    }
   }
 }
 
