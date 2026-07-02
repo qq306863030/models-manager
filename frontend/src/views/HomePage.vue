@@ -128,7 +128,7 @@
     <AddModelDialog ref="addDialogRef" @submit="handleAddSubmit" />
 
     <!-- ========== 查看接口弹窗 ========== -->
-    <el-dialog v-model="apiDialogVisible" title="代理接口地址" width="800px">
+    <el-dialog v-model="apiDialogVisible" title="代理接口地址" width="800px" class="api-dialog">
       <!-- API Key 配置 -->
       <el-form label-width="100px" class="api-key-form">
         <el-form-item label="API Key">
@@ -530,5 +530,11 @@ onUnmounted(() => {
 .filters {
   display: flex;
   align-items: center;
+}
+
+.api-dialog {
+  :deep(.el-dialog__body) {
+    padding-bottom: 20px;
+  }
 }
 </style>
