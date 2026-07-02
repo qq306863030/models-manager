@@ -146,7 +146,7 @@
         </el-form-item>
         <el-form-item label="说明">
           <span class="api-key-hint">
-            调用地址：http://localhost:11888/admin/v1<br/>
+            调用地址：{{ currentOrigin }}/admin/v1<br/>
             调用接口时需要填写 apiKey
           </span>
         </el-form-item>
@@ -236,6 +236,9 @@ import {
 } from '@/App'
 
 const router = useRouter()
+
+// 当前域名（用于动态地址显示）
+const currentOrigin = window.location.origin
 
 // 用户信息
 const username = localStorage.getItem('auth_username') || ''
