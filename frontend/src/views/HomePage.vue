@@ -179,6 +179,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <div style="height: 20px;"></div>
     </el-dialog>
 
     <!-- ========== 设置弹窗 ========== -->
@@ -534,7 +535,7 @@ onUnmounted(() => {
 
 .api-dialog {
   :deep(.el-dialog__body) {
-    padding-bottom: 20px;
+    padding-bottom: 30px !important;
   }
 }
 </style>
