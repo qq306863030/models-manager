@@ -26,7 +26,7 @@ function initDefaultAdmin() {
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
     if (userCount.count === 0) {
       const passwordHash = crypto.createHash('sha256').update(DEFAULT_ADMIN.password).digest('hex');
-      db.prepare("INSERT INTO users (name, password_hash, role) VALUES (?, ?, 'super_admin')").run(DEFAULT_ADMIN.username, passwordHash);
+      db.prepare("INSERT OR IGNORE INTO users (name, password_hash, role) VALUES (?, ?, 'super_admin')").run(DEFAULT_ADMIN.username, passwordHash);
       console.log('[auth] Default admin user created: admin/admin');
     }
   } catch (error) {

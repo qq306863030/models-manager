@@ -1,8 +1,19 @@
 import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
-const dbPath = path.join(__dirname, '../../data/database.db');
+// 优先使用当前工作目录，兼容全局安装和本地开发
+const getDataDir = () => {
+  const cwdDataDir = path.join(process.cwd(), 'data');
+  if (fs.existsSync(cwdDataDir) || fs.mkdirSync(cwdDataDir, { recursive: true })) {
+    return cwdDataDir;
+  }
+  // 回退到用户目录
+  return path.join(os.homedir(), '.ai-models-manager', 'data');
+};
+
+const dbPath = path.join(getDataDir(), 'database.db');
 
 
 const dataDir = path.dirname(dbPath);

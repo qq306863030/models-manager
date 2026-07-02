@@ -35,6 +35,11 @@ npm install -g ai-models-manager
 ai-server start
 ```
 
+### 访问地址
+
+- **模型管理页面**: http://localhost:11888
+- **开发环境前端**: http://localhost:5173
+
 ### 开发模式
 
 ```bash

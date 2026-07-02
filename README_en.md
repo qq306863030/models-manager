@@ -35,6 +35,11 @@ npm install -g ai-models-manager
 ai-server start
 ```
 
+### Access URLs
+
+- **Model Management Page**: http://localhost:11888
+- **Development Frontend**: http://localhost:5173
+
 ### Development Mode
 
 ```bash

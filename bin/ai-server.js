@@ -2,9 +2,13 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const command = process.argv[2];
-const rootDir = path.resolve(__dirname);
+// 优先使用当前工作目录，兼容全局安装和本地运行
+const rootDir = fs.existsSync(path.join(process.cwd(), 'ecosystem.config.js'))
+  ? process.cwd()
+  : path.resolve(__dirname, '..');
 
 function start() {
   console.log('🚀 Starting llm-manager server...');
