@@ -1,10 +1,14 @@
 {
-  "name": "models-manager",
+  "name": "ai-models-manager",
   "version": "1.0.0",
   "description": "一个简单的模型管理工具，统一管理多种 LLM 提供商，提供代理路由和 token 追踪能力，提供模型中转能力。",
   "main": "dist/app.js",
   "bin": {
     "ai-server": "./bin/ai-server.js"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   },
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
@@ -20,7 +24,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "http://git.romangis.top:999/my_code/cmd.git"
+    "url": "https://github.com/qq306863030/models-manager.git"
   },
   "keywords": [
     "llm",

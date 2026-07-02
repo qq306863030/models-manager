@@ -1,53 +1,52 @@
-# LLM Manager - AI Model Management Platform
+# LLM Manager
 
-A lightweight personal LLM management tool providing unified proxy interfaces with automatic failover and usage tracking. Users can customize model priority order — when the primary model fails due to quota limits, rate limits, or requires cooldown, the system automatically switches to the next model; models with errors are locked for 10 minutes, then unlocked and retried.
+A lightweight LLM management tool providing unified proxy interfaces with automatic failover and usage tracking.
 
-## Features
+## ✨ Features
 
-### 🤖 Model Proxy
-- OpenAI Chat Completions API support
-- Anthropic Messages API support
-- OpenAI Responses API support
-- Ollama compatible interface support
-- Automatic failover: switch to backup model when request fails
-- Model locking mechanism: failed models auto-lock for 10 minutes
+- 🤖 OpenAI Chat Completions / Anthropic Messages / OpenAI Responses API support
+- 🔄 Automatic failover: switch to backup model when request fails
+- 🔒 Model locking mechanism: failed models auto-lock for 10 minutes
+- 📊 Real-time token usage tracking with per-model statistics
+- 🎨 Multiple API format support with custom model parameters
+- 🖱️ Drag-and-drop model priority sorting
 
-### 📊 Usage Statistics
-- Real-time token usage tracking
-- Per-model statistics grouping
-- Daily/Weekly/Monthly trend charts
+## 📋 Model Configuration Parameters Reference
 
-### ⚙️ Flexible Configuration
-- Multiple API format support
-- Custom model parameters (max content length, max tokens)
-- Model enable/disable control
-- Drag-and-drop model sorting
+- [https://models.dev/api.json](https://models.dev/api.json)
 
-### � Model Configuration Parameters Reference
-- Model configuration parameters reference [https://models.dev/api.json](https://models.dev/api.json)
-
-### �🔧 Global Settings
-- Unified max content length and max tokens settings
-- Settings value > 0 overrides all model parameters
-- Settings value = 0 uses model's own configuration
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Requirements
 
-- Node.js >= 18.0.0
-- npm >= 9.0.0
+- Node.js >= 22.0.0
+- npm >= 10.0.0
 
-### Port Configuration
-
-- **Backend service port**: 11888
-- **Frontend dev port**: 5173 (API requests proxied to 11888 in dev mode)
-- Port can be modified via environment variable `PORT`
-
-### Install Dependencies
+### Install
 
 ```bash
+npm install -g ai-models-manager
+```
+
+### Start Service
+
+```bash
+# Start service (default port 11888)
+ai-server start
+```
+
+### Development Mode
+
+```bash
+# Clone the project
+git clone https://github.com/qq306863030/models-manager.git
+cd models-manager
+
+# Install dependencies
 npm install
+
+# Start dev server
+npm run dev
 ```
 
 ### Default Account
@@ -57,44 +56,12 @@ npm install
 
 > Please change the password after first login!
 
-### Development Mode
-
-```bash
-# Start both backend and frontend dev servers
-npm run dev
-
-# Start backend only
-npm run dev:server
-
-# Start frontend only
-npm run dev:client
-```
-
-### Production Deployment
-
-```bash
-# 1. Build the project
-npm run build
-
-# 2. Start the service (using PM2)
-ai-server start
-
-# Or use npm script
-npm start
-```
-
-## Usage
+## 📖 Usage
 
 ### CLI Commands
 
-Install global command:
 ```bash
-npm link
-```
-
-Available commands:
-```bash
-ai-server start     # Start service (4 instances)
+ai-server start     # Start service
 ai-server stop      # Stop service
 ai-server restart   # Restart service
 ai-server status    # Check status
@@ -115,13 +82,9 @@ ai-server logs      # View logs
 2. Set max content length and max tokens
 3. Click "Confirm" to save
 
-**Note:**
-- When value is 0, each model uses its own configuration
-- When value is greater than 0, all models uniformly use the configured value
+> When value is 0, each model uses its own configuration; when value is greater than 0, all models uniformly use the configured value
 
-### Proxy Interfaces
-
-After starting the service, the following proxy interfaces are available:
+## 🌐 Proxy Interfaces
 
 | Interface | Method | Description |
 |-----------|--------|-------------|
@@ -132,6 +95,6 @@ After starting the service, the following proxy interfaces are available:
 | `/api/show` | POST | Ollama model details |
 | `/api/version` | GET | Ollama version info |
 
-## License
+## 📄 License
 
 ISC
