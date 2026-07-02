@@ -43,8 +43,8 @@ app.use('/api/token-stats', tokenStatsRouter);
 app.use('/api/llm-models', llmModelsRouter);
 
 // 服务端配置（供前端读取）
-app.get('/api/config', (_req: Request, res: Response) => {
-  res.json({ port: PORT });
+app.get('/api/config', (req: Request, res: Response) => {
+  res.json({ port: PORT, origin: req.protocol + '://' + req.get('host') });
 });
 
 // Proxy 代理路由（OpenAI/Ollama 兼容接口）
