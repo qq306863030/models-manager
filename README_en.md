@@ -6,10 +6,17 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 
 - 🤖 OpenAI Chat Completions / Anthropic Messages / OpenAI Responses API support
 - 🔄 Automatic failover: switch to backup model when request fails
-- 🔒 Model locking mechanism: failed models auto-lock for 10 minutes
+- 🔒 Model locking mechanism: failed models auto-lock for 10 minutes (configurable)
 - 📊 Real-time token usage tracking with per-model statistics
 - 🎨 Multiple API format support with custom model parameters
 - 🖱️ Drag-and-drop model priority sorting
+
+### 📌 Model Calling Strategy
+
+1. **Priority Call**: Prefer to use the specified model
+2. **Sequential Call**: Try available models in drag-and-drop order
+3. **Auto Skip**: Automatically skip locked and disabled models during calls
+4. **Failover**: Lock current model on error and switch to the next model
 
 ## 🚀 Quick Start
 

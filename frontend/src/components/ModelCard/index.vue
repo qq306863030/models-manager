@@ -95,6 +95,19 @@
             <span class="card-label">Max_Token:</span>
             <span class="card-value">{{ formatNumber(model.max_token) }}</span>
           </div>
+          <div class="card-row">
+            <span class="card-label">模态能力:</span>
+            <span class="card-value card-capabilities">
+              <el-tag
+                v-for="cap in model.capabilities"
+                :key="cap"
+                size="small"
+                type="info"
+                class="capability-tag">
+                {{ getCapabilityLabel(cap) }}
+              </el-tag>
+            </span>
+          </div>
           <div class="card-row card-row-stat">
             <span class="card-label">今日消耗:</span>
             <span class="card-value card-value-stat">{{ formatNumber(statSummary.todayToken) }}</span>
@@ -127,6 +140,21 @@
           <el-form-item label="Max_Token">
             <el-input-number v-model="editForm.max_token" :min="1" :max="1000000" controls-position="right" />
           </el-form-item>
+          <el-form-item label="模态能力">
+            <el-select
+              v-model="editForm.capabilities"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              
+              style="width: 100%">
+              <el-option
+                v-for="opt in CAPABILITIES_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value" />
+            </el-select>
+          </el-form-item>
           <el-form-item class="card-edit-form-actions">
             <el-button type="info" size="small" :icon="Close" @click="handleCancelEdit" plain>取消</el-button>
             <el-button type="success" size="small" :icon="Check" :loading="submitting" @click="handleSubmitEdit">提交</el-button>
@@ -143,6 +171,7 @@ import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy } from '@element-plus/icons-vue'
 import type { Model, ModelForm } from '@/api/modelService'
+import { CAPABILITIES_OPTIONS } from '@/types/enum'
 import type { ModelCardProps, ModelCardEmits } from './index'
 
 defineOptions({ name: 'ModelCard' })
@@ -170,6 +199,7 @@ const editForm = reactive<{
   api_key: string
   max_content_length: number
   max_token: number
+  capabilities: string[]
 }>({
   name: '',
   model_name: '',
@@ -177,6 +207,7 @@ const editForm = reactive<{
   api_key: '',
   max_content_length: 4096,
   max_token: 2048,
+  capabilities: ["completion", "tools", "thinking"],
 })
 
 const handleEdit = () => {
@@ -186,6 +217,7 @@ const handleEdit = () => {
   editForm.api_key = props.model.api_key
   editForm.max_content_length = props.model.max_content_length
   editForm.max_token = props.model.max_token
+  editForm.capabilities = [...(props.model.capabilities ?? ["completion", "tools", "thinking"])]
   isEditing.value = true
 }
 
@@ -291,6 +323,11 @@ const fallbackCopy = (text: string) => {
     ElMessage.error('复制失败')
   }
   document.body.removeChild(textarea)
+}
+
+const getCapabilityLabel = (cap: string): string => {
+  const option = CAPABILITIES_OPTIONS.find(o => o.value === cap)
+  return option?.label ?? cap
 }
 
 const formatNumber = (num: number): string => {
