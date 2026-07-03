@@ -1,6 +1,6 @@
 {
   "name": "ai-models-manager",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "一个简单的模型管理工具，统一管理多种 LLM 提供商，提供代理路由和 token 追踪能力，提供模型中转能力。",
   "main": "dist/app.js",
   "bin": {
@@ -48,8 +48,6 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
-    "ai": "^7.0.2",
-    "axios": "^1.18.1",
     "better-sqlite3": "^12.11.1",
     "concurrently": "^9.1.0",
     "express": "^5.2.1",
