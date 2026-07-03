@@ -11,11 +11,9 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 - 🎨 Multiple API format support with custom model parameters
 - 🖱️ Drag-and-drop model priority sorting
 
-## 📋 Model Configuration Parameters Reference
-
-- [https://models.dev/api.json](https://models.dev/api.json)
-
 ## 🚀 Quick Start
+
+![Interface Preview](imgs/image.png)
 
 ### Requirements
 
@@ -38,21 +36,6 @@ ai-server start
 ### Access URLs
 
 - **Model Management Page**: http://localhost:11888
-- **Development Frontend**: http://localhost:5173
-
-### Development Mode
-
-```bash
-# Clone the project
-git clone https://github.com/qq306863030/models-manager.git
-cd models-manager
-
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
-```
 
 ### Default Account
 
@@ -80,6 +63,8 @@ ai-server logs      # View logs
 3. Fill in Base URL and API Key
 4. Add model configurations in the model list
 5. Click "Submit" to save
+
+> 💡 **Model Configuration Parameters Reference**: [https://models.dev/api.json](https://models.dev/api.json)
 
 ### Global Settings
 

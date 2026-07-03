@@ -11,11 +11,9 @@
 - 🎨 支持多种 API 格式，自定义模型参数
 - 🖱️ 拖拽排序模型优先级
 
-## 📋 模型配置参数参考
-
-- [https://models.dev/api.json](https://models.dev/api.json)
-
 ## 🚀 快速开始
+
+![界面预览](imgs/image.png)
 
 ### 环境要求
 
@@ -38,21 +36,6 @@ ai-server start
 ### 访问地址
 
 - **模型管理页面**: http://localhost:11888
-- **开发环境前端**: http://localhost:5173
-
-### 开发模式
-
-```bash
-# 克隆项目
-git clone https://github.com/qq306863030/models-manager.git
-cd models-manager
-
-# 安装依赖
-npm install
-
-# 启动开发服务器
-npm run dev
-```
 
 ### 默认账号
 
@@ -80,6 +63,8 @@ ai-server logs      # 查看日志
 3. 填写 Base URL 和 API Key
 4. 在模型列表中添加模型配置
 5. 点击「提交」保存
+
+> 💡 **模型配置参数参考**: [https://models.dev/api.json](https://models.dev/api.json)
 
 ### 全局设置
 

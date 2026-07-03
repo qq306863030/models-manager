@@ -127,7 +127,7 @@
           <el-form-item label="Max_Token">
             <el-input-number v-model="editForm.max_token" :min="1" :max="1000000" controls-position="right" />
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="card-edit-form-actions">
             <el-button type="info" size="small" :icon="Close" @click="handleCancelEdit" plain>取消</el-button>
             <el-button type="success" size="small" :icon="Check" :loading="submitting" @click="handleSubmitEdit">提交</el-button>
           </el-form-item>
@@ -305,5 +305,11 @@ const formatNumber = (num: number): string => {
 // 覆盖 el-card 的 padding（仅 ModelCard 生效）
 .model-card .el-card__body {
   padding: 0 !important;
+}
+
+.card-edit-form-actions {
+  .el-form-item__content {
+    justify-content: flex-end;
+  }
 }
 </style>

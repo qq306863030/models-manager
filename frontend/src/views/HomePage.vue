@@ -77,7 +77,7 @@
           item-key="id"
           handle=".card-actions"
           class="model-list-draggable"
-          :style="{ maxHeight: '630px', overflowY: 'auto' }"
+          :style="{ maxHeight: '630px','overflow-y': 'auto', 'overflow-x': 'hidden'}"
           @end="onDragEnd">
           <template #item="{ element }">
             <ModelCard
@@ -91,7 +91,9 @@
               @copy="handleCopy"
               @delete="handleDelete"
               @toggle-lock="handleToggleLock"
-              @toggle-disable="handleToggleDisable" />
+              
+              @toggle-disable="handleToggleDisable"
+              @submit-edit="handleEditSubmit" />
           </template>
         </draggable>
 
@@ -216,6 +218,7 @@ import {
   addDialogRef,
   openAddDialog,
   handleAddSubmit,
+  handleEditSubmit,
   handleCheckChange,
   handleToggleAll,
   handleBatchDelete,
@@ -389,19 +392,22 @@ onUnmounted(() => {
 
 .model-list-card :deep(.el-card__body) {
   padding: 20px;
+  overflow: unset;
 }
 }
 
 .model-list-draggable {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
   gap: 16px;
 }
 
 .stats-charts {
   display: flex;
   gap: 24px;
-  height: 340px;
+  height: 345px;
 
   .stat-chart {
     flex: 1;
