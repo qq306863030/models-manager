@@ -81,6 +81,12 @@ ai-server logs      # View logs
 
 > When value is 0, each model uses its own configuration; when value is greater than 0, all models uniformly use the configured value
 
+### Model Card Operations
+
+- **Lock Button** (🔒): Manually lock a model. Locked models will not be called. Click again to unlock
+- **Disable Button** (⛔): Disable a model. Disabled models will not participate in any calls and will not appear in the model list
+- **Drag-and-Drop Sorting**: Drag cards in the model list to adjust call order, models higher up have higher priority
+
 ## 🌐 Proxy Interfaces
 
 | Interface | Method | Description |
