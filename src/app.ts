@@ -60,10 +60,19 @@ app.use('/:username', userRouter);
 const publicPath = path.join(__dirname, 'public');
 app.use(express.static(publicPath));
 
+// 移动端静态文件（用于 /m/* 路由）
+const mobilePath = path.join(publicPath, 'mobile.html');
+app.use('/m', express.static(mobilePath));
+
 // SPA fallback：所有非 API 路由返回 index.html（排除 /v1）
+// 移动端路由 /m/* 返回 mobile.html
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
     return next();
+  }
+  // 移动端路由返回 mobile.html
+  if (req.path.startsWith('/m')) {
+    return res.sendFile(mobilePath);
   }
   res.sendFile(path.join(publicPath, 'index.html'));
 });
