@@ -162,6 +162,8 @@ const proxyEndpoints = [
   { method: 'POST', path: '/v1/chat/completions',    desc: 'Chat Completions API（OpenAI 兼容）' },
   { method: 'POST', path: '/v1/responses',           desc: 'Responses API（OpenAI 兼容）' },
   { method: 'POST', path: '/v1/messages',            desc: 'Messages API（Anthropic 兼容）' },
+  { method: 'POST', path: '/v1/anthropic/messages',  desc: 'Messages API（Anthropic 标准路径）' },
+  { method: 'GET',  path: '/v1/anthropic',           desc: 'Anthropic 代理信息（可查看端点说明）' },
   { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（Ollama 兼容）' },
   { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
   { method: 'GET',  path: '/api/version',            desc: '版本信息' },

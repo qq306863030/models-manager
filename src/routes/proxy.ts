@@ -693,6 +693,24 @@ router.post('/v1/messages', (req: Request, res: Response) => {
   handleAnthropicMessages(req, res);
 });
 
+// POST /v1/anthropic/messages — Anthropic Messages API 别名路径
+router.post('/v1/anthropic/messages', (req: Request, res: Response) => {
+  handleAnthropicMessages(req, res);
+});
+
+// GET /v1/anthropic — Anthropic 兼容信息
+router.get('/v1/anthropic', (_req: Request, res: Response) => {
+  res.json({
+    type: 'info',
+    message: 'Anthropic-compatible proxy endpoint',
+    endpoints: {
+      messages: '/v1/anthropic/messages',
+      messages_legacy: '/v1/messages',
+    },
+    description: '使用此端点可作为 Anthropic Messages API 的代理，支持 Claude 系列模型及 OpenAI 兼容格式的自动转换',
+  });
+});
+
 // ========== Ollama 兼容接口 ==========
 
 router.get('/api/tags', (_req: Request, res: Response) => {
@@ -892,6 +910,25 @@ userRouter.post('/v1/responses', (req: Request, res: Response) => {
 userRouter.post('/v1/messages', (req: Request, res: Response) => {
   const reqWithUser = req as RequestWithUser;
   handleAnthropicMessages(req, res, reqWithUser.proxyUserId);
+});
+
+// 用户级 Anthropic Messages API 别名路径
+userRouter.post('/v1/anthropic/messages', (req: Request, res: Response) => {
+  const reqWithUser = req as RequestWithUser;
+  handleAnthropicMessages(req, res, reqWithUser.proxyUserId);
+});
+
+// 用户级 Anthropic 兼容信息
+userRouter.get('/v1/anthropic', (_req: Request, res: Response) => {
+  res.json({
+    type: 'info',
+    message: 'Anthropic-compatible proxy endpoint',
+    endpoints: {
+      messages: '/v1/anthropic/messages',
+      messages_legacy: '/v1/messages',
+    },
+    description: '使用此端点可作为 Anthropic Messages API 的代理，支持 Claude 系列模型及 OpenAI 兼容格式的自动转换',
+  });
 });
 
 // 用户级 Ollama 兼容接口
