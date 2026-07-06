@@ -85,14 +85,41 @@
     </van-popup>
 
     <!-- API 设置弹窗 -->
-    <van-popup v-model:show="apiDialogVisible" position="bottom" round style="height: 60%">
+    <van-popup v-model:show="apiDialogVisible" position="bottom" round style="height: 75%">
       <div class="popup-container">
-        <van-nav-bar title="API 设置" left-text="关闭" @click-left="apiDialogVisible = false" />
-        <van-cell-group inset>
-          <van-field v-model="customApiKey" type="password" label="自定义 API Key" placeholder="可选" />
-        </van-cell-group>
-        <div style="padding: 16px;">
-          <van-button block type="primary" @click="loadApiSettings">保存</van-button>
+        <van-nav-bar title="代理接口地址" left-text="关闭" @click-left="apiDialogVisible = false" />
+        <div class="api-content">
+          <!-- API Key 配置 -->
+          <van-cell-group inset style="margin-bottom: 8px;">
+            <van-field v-model="customApiKey" type="password" label="API Key" placeholder="可选，留空则使用模型的 Key" />
+          </van-cell-group>
+          <div style="padding: 0 16px 8px; display: flex; gap: 8px;">
+            <van-button size="small" @click="handleGenerateKey">生成</van-button>
+            <van-button v-if="customApiKey" size="small" @click="handleCopyKey">复制 Key</van-button>
+            <van-button size="small" @click="handleClearKey">清除</van-button>
+          </div>
+
+          <!-- 调用地址 -->
+          <div class="api-base-url">
+            <span class="base-url-label">调用地址：</span>
+            <code class="base-url-value" @click="copyText(currentOrigin + '/' + (username || 'default'))">
+              {{ currentOrigin }}/{{ username || 'default' }}
+            </code>
+            <van-icon name="copy-o" size="14" style="margin-left:4px;color:#1989fa;" @click="copyText(currentOrigin + '/' + (username || 'default'))" />
+            <div class="base-url-hint">如果生成了 Key，调用时需要填写 Authorization: Bearer &lt;Key&gt;</div>
+          </div>
+
+          <!-- 接口列表 -->
+          <div class="endpoints-section">
+            <div class="endpoints-title">可用接口</div>
+            <div v-for="ep in proxyEndpoints" :key="ep.path" class="endpoint-item" @click="copyText(userProxyBaseUrl + ep.path)">
+              <van-tag :type="ep.method === 'GET' ? 'success' : 'primary'" size="small" round>
+                {{ ep.method }}
+              </van-tag>
+              <span class="endpoint-desc">{{ ep.desc }}</span>
+              <van-icon name="copy-o" size="14" style="margin-left:auto;color:#c8c9cc;flex-shrink:0;" />
+            </div>
+          </div>
         </div>
       </div>
     </van-popup>
@@ -122,6 +149,60 @@ import type { Model } from '@/api/modelService';
 const router = useRouter();
 const username = localStorage.getItem('auth_username') || '';
 const isAdmin = computed(() => localStorage.getItem('auth_is_admin') === '1');
+
+// 代理接口端点列表（与桌面端一致）
+const currentOrigin = window.location.origin;
+const proxyBaseUrl = ref(currentOrigin);
+const userProxyBaseUrl = computed(() => {
+  return `${proxyBaseUrl.value}/${username || 'default'}`;
+});
+
+const proxyEndpoints = [
+  { method: 'GET',  path: '/v1/models',              desc: '获取模型列表' },
+  { method: 'POST', path: '/v1/chat/completions',    desc: 'Chat Completions API（OpenAI 兼容）' },
+  { method: 'POST', path: '/v1/responses',           desc: 'Responses API（OpenAI 兼容）' },
+  { method: 'POST', path: '/v1/messages',            desc: 'Messages API（Anthropic 兼容）' },
+  { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（Ollama 兼容）' },
+  { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
+  { method: 'GET',  path: '/api/version',            desc: '版本信息' },
+  { method: 'GET',  path: '/v1/test',                desc: '测试接口' },
+];
+
+// 剪贴板复制
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('已复制');
+  } catch {
+    // 兼容旧浏览器
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('已复制');
+  }
+};
+
+// API Key 操作
+const handleGenerateKey = async () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const key = 'sk-' + Array.from({ length: 48 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  customApiKey.value = key;
+  localStorage.setItem('custom_api_key', key);
+  showToast('已生成新 Key');
+  // 保存到后端
+  const { updateUserSettings } = await import('@/api/userSettingsService');
+  await updateUserSettings({ api_key: key });
+};
+
+const handleCopyKey = () => copyText(customApiKey.value);
+const handleClearKey = () => {
+  customApiKey.value = '';
+  localStorage.removeItem('custom_api_key');
+  showToast('已清除');
+};
 
 const refreshing = ref(false);
 const settingsDialogVisible = ref(false);
@@ -332,5 +413,68 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #f7f8fa;
+}
+
+/* API 弹窗样式 */
+.api-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.api-base-url {
+  padding: 8px 16px 12px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+}
+.base-url-label {
+  display: block;
+  margin-bottom: 2px;
+}
+.base-url-value {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  word-break: break-all;
+}
+.base-url-hint {
+  color: #999;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.endpoints-section {
+  padding: 0 16px;
+}
+.endpoints-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+.endpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  background: #fff;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.endpoint-item:active {
+  background: #f5f5f5;
+}
+.endpoint-desc {
+  font-size: 12px;
+  color: #333;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
