@@ -4,12 +4,13 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 
 ## ✨ Features
 
-- 🤖 OpenAI Chat Completions / Anthropic Messages / OpenAI Responses API support
+- 🤖 Unified proxy for OpenAI Chat Completions / Anthropic Messages / OpenAI Responses API
 - 🔄 Automatic failover: switch to backup model when request fails
 - 🔒 Model locking mechanism: failed models auto-lock for 10 minutes (configurable)
 - 📊 Real-time token usage tracking with per-model statistics
 - 🎨 Multiple API format support with custom model parameters
 - 🖱️ Drag-and-drop model priority sorting
+- 🤝 **Integrates with various Agent tools**, replaces `deepseek-copilot-bridge`, can be directly used in **VSCode Copilot**
 
 ### 📌 Model Calling Strategy
 
@@ -89,14 +90,42 @@ ai-server logs      # View logs
 
 ## 🌐 Proxy Interfaces
 
+Click "View API" on the management page to see the full proxy addresses. Each user gets isolated endpoints (e.g. `{origin}/{username}/...`).
+
+### OpenAI Compatible Interfaces
+
 | Interface | Method | Description |
 |-----------|--------|-------------|
-| `/v1/models` | GET | Get model list |
-| `/v1/chat/completions` | POST | Chat Completions interface |
-| `/v1/responses` | POST | Responses interface |
-| `/api/tags` | GET | Ollama model list |
-| `/api/show` | POST | Ollama model details |
-| `/api/version` | GET | Ollama version info |
+| `/v1/models` | GET | Get available model list |
+| `/v1/chat/completions` | POST | Chat Completions API (standard OpenAI format) |
+| `/v1/responses` | POST | Responses API (new OpenAI format) |
+| `/v1/test` | GET | Model connectivity test |
+
+### Anthropic Compatible Interfaces
+
+| Interface | Method | Description |
+|-----------|--------|-------------|
+| `/v1/messages` | POST | Messages API (Anthropic standard format) |
+| `/v1/anthropic/messages` | POST | Messages API (Anthropic standard path alias) |
+| `/v1/anthropic` | GET | Anthropic proxy info and endpoint documentation |
+
+> 💡 Anthropic interfaces support automatic conversion from OpenAI format models, allowing direct use as a Claude API proxy.
+
+### Ollama Compatible Interfaces
+
+| Interface | Method | Description |
+|-----------|--------|-------------|
+| `/api/tags` | GET | Get model list |
+| `/api/show` | POST | Get model details |
+| `/api/version` | GET | Version info |
+
+### Agent / IDE Integration
+
+This tool replaces `deepseek-copilot-bridge` as a unified AI model proxy gateway for:
+
+- **VSCode Copilot**: Set API Base URL to this service (e.g. `http://localhost:11888/admin/v1`) to proxy all Copilot model requests through managed models
+- **Cursor / Windsurf** and other AI IDEs: Configure OpenAI-compatible endpoint address to use
+- **Various Agent frameworks** (LangChain, AutoGPT, etc.): Point OpenAI/Anthropic SDK directly to this service
 
 ## 📄 License
 
