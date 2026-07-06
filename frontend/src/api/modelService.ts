@@ -90,3 +90,8 @@ export const copyModel = (id: number) => {
 export const reorderModels = (items: Array<{ id: number; sort_index: number }>) => {
   return request.put<{ success: boolean; message: string }>('/models/reorder', { items });
 };
+
+// 锁定/解锁模型
+export const toggleModelLock = (id: number, lock: boolean) => {
+  return request.put<{ success: boolean; message: string }>(`/models/${id}/lock`, { isLock: lock ? Date.now() : 0 });
+};

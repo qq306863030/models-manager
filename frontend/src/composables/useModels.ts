@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 import { showToast, showFailToast, showConfirmDialog } from 'vant';
-import { getModels, updateModel, deleteModel, batchCreateModels, copyModel, reorderModels, type Model, type ModelForm, type ModelRowForm } from '@/api/modelService';
+import { getModels, updateModel, deleteModel, batchCreateModels, copyModel, reorderModels, toggleModelLock, type Model, type ModelForm, type ModelRowForm } from '@/api/modelService';
 import { getTokenStatsByModelIds, type TokenStat } from '@/api/tokenStatsService';
 import { getUserSettings, updateUserSettings } from '@/api/userSettingsService';
 
@@ -206,9 +206,10 @@ export const handleDelete = async (item: Model) => {
 
 export const handleToggleLock = async (item: Model) => {
   try {
-    const res = await updateModel(item.id, { is_locked: !item.is_locked });
+    const isCurrentlyLocked = item.isLock > 0;
+    const res = await toggleModelLock(item.id, !isCurrentlyLocked);
     if (res.success) {
-      showToast(item.is_locked ? '已解锁' : '已锁定');
+      showToast(isCurrentlyLocked ? '已解锁' : '已锁定');
       fetchModels();
     } else {
       showFailToast(res.message || '操作失败');
@@ -220,9 +221,9 @@ export const handleToggleLock = async (item: Model) => {
 
 export const handleToggleDisable = async (item: Model) => {
   try {
-    const res = await updateModel(item.id, { is_disabled: !item.is_disabled });
+    const res = await updateModel(item.id, { isDisable: !item.isDisable });
     if (res.success) {
-      showToast(item.is_disabled ? '已启用' : '已禁用');
+      showToast(item.isDisable ? '已启用' : '已禁用');
       fetchModels();
     } else {
       showFailToast(res.message || '操作失败');
