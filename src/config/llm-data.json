@@ -365,5 +365,103 @@
         "capabilities": ["completion", "tools", "thinking", "vision"]
       }
     ]
+  },
+  {
+    "llmCompany": "OpenCode",
+    "api_format": "1",
+    "url": "https://opencode.ai/zen/go/v1/chat/completions",
+    "models": [
+      {
+        "model": "glm-5.2",
+        "content_length": "1000000",
+        "max_token": "128000",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "glm-5.1",
+        "content_length": "200000",
+        "max_token": "128000",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "kimi-k2.7-code",
+        "content_length": "262144",
+        "max_token": "262144",
+        "capabilities": ["completion", "tools", "thinking", "vision"]
+      },
+      {
+        "model": "kimi-k2.6",
+        "content_length": "262144",
+        "max_token": "262144",
+        "capabilities": ["completion", "tools", "thinking", "vision"]
+      },
+      {
+        "model": "deepseek-v4-pro",
+        "content_length": "1000000",
+        "max_token": "384000",
+        "capabilities": ["completion", "tools", "thinking", "vision"]
+      },
+      {
+        "model": "deepseek-v4-flash",
+        "content_length": "1000000",
+        "max_token": "384000",
+        "capabilities": ["completion", "tools", "thinking", "vision"]
+      },
+      {
+        "model": "mimo-v2.5",
+        "content_length": "1048576",
+        "max_token": "131072",
+        "capabilities": ["completion", "tools", "thinking"]
+      },
+      {
+        "model": "mimo-v2.5-pro",
+        "content_length": "1048576",
+        "max_token": "131072",
+        "capabilities": ["completion", "tools", "thinking"]
+      }
+    ]
+  },
+  {
+    "llmCompany": "OpenCode-Anthropic",
+    "api_format": "2",
+    "url": "https://opencode.ai/zen/go/v1/messages",
+    "models": [
+      {
+        "model": "minimax-m3",
+        "content_length": "512000",
+        "max_token": "128000",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "minimax-m2.7",
+        "content_length": "204800",
+        "max_token": "131072",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "minimax-m2.5",
+        "content_length": "204800",
+        "max_token": "131072",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "qwen3.7-max",
+        "content_length": "1000000",
+        "max_token": "65536",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "qwen3.7-plus",
+        "content_length": "1000000",
+        "max_token": "64000",
+        "capabilities": ["completion", "tools"]
+      },
+      {
+        "model": "qwen3.6-plus",
+        "content_length": "1000000",
+        "max_token": "65536",
+        "capabilities": ["completion", "tools"]
+      }
+    ]
   }
 ]
