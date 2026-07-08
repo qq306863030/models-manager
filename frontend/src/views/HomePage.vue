@@ -96,6 +96,7 @@
               <div class="header-cell header-model-name">模型ID</div>
               <div class="header-cell header-url">URL</div>
               <div class="header-cell header-capabilities">模态能力</div>
+              <div class="header-cell header-context-length">最大上下文长度</div>
               <div class="header-cell header-consume">今日消耗</div>
               <div class="header-cell header-call-count">调用次数</div>
               <div class="header-cell header-status">状态</div>
@@ -682,7 +683,7 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     height: 100%;
-    padding: 0 8px;
+    padding: 0 5px;
   }
 
   .header-drag {
@@ -697,12 +698,12 @@ onUnmounted(() => {
   }
 
   .header-name {
-    width: 300px;
+    width: 290px;
     flex-shrink: 0;
   }
 
   .header-model-name {
-    width: 160px;
+    width: 150px;
     flex-shrink: 0;
   }
 
@@ -716,9 +717,14 @@ onUnmounted(() => {
     flex-shrink: 0;
   }
 
+  .header-context-length {
+    width: 120px;
+    flex-shrink: 0;
+  }
+
   .header-consume,
   .header-call-count {
-    width: 120px;
+    width: 110px;
     flex-shrink: 0;
   }
 
@@ -729,7 +735,7 @@ onUnmounted(() => {
   }
 
   .header-actions {
-    width: 150px;
+    width: 145px;
     flex-shrink: 0;
     justify-content: center;
   }

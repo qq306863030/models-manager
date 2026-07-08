@@ -60,6 +60,11 @@
           </el-tag>
         </div>
 
+        <!-- 最大上下文长度 -->
+        <div class="row-cell cell-context-length">
+          <span class="cell-text">{{ formatNumber(model.max_content_length) }}</span>
+        </div>
+
         <!-- 今日消耗 -->
         <div class="row-cell cell-consume">
           <span class="cell-text cell-text-stat">{{ formatNumber(statSummary.todayToken) }}</span>

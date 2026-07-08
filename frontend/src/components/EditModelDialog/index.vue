@@ -41,14 +41,12 @@
       <el-form-item label="最大内容长度">
         <el-input-number
           v-model="formData.max_content_length"
-          :min="1"
-          :max="100000" />
+          :min="1" />
       </el-form-item>
       <el-form-item label="最大 Token">
         <el-input-number
           v-model="formData.max_token"
-          :min="1"
-          :max="100000" />
+          :min="1" />
       </el-form-item>
       <el-form-item label="模态能力">
         <el-select
