@@ -13,6 +13,8 @@ declare module 'vue' {
   export interface GlobalComponents {
     AddModelDialog: typeof import('./src/components/AddModelDialog/index.vue')['default']
     EditModelDialog: typeof import('./src/components/EditModelDialog/index.vue')['default']
+    ErrorLogDrawer: typeof import('./src/components/ErrorLogDrawer/index.vue')['default']
+    ImportConflictDialog: typeof import('./src/components/ImportConflictDialog/index.vue')['default']
     LoginDialog: typeof import('./src/components/LoginDialog/index.vue')['default']
     ModelCard: typeof import('./src/components/ModelCard/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

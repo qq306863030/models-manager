@@ -36,6 +36,7 @@ import {
   getEffectiveMaxToken,
   MAX_RESPONSE_TOKENS,
   LOCK_DURATION_MS,
+  REQUEST_TIMEOUT_MS,
   API_FORMAT,
   type ModelRow,
   type GenericMessage,
@@ -54,6 +55,7 @@ import {
 
 import { trackTokenUsage } from '../utils/tokenTracker';
 import { getUserApiKey } from '../config/database';
+import { errorBroadcaster } from '../utils/errorBroadcaster';
 import OpenAI from 'openai';
 
 const router = Router();
@@ -127,6 +129,19 @@ function getModelByName(name: string, userId?: number): ModelRow | undefined {
 
 // ========== 故障转移核心 ==========
 
+/** 判断是否为"不支持多模态"类型的错误，这类错误不应锁定模型或故障转移 */
+function isMultimodalNotSupportedError(err: unknown): boolean {
+  const msg = (err as Error)?.message || '';
+  return (
+    /image_url/i.test(msg) ||
+    /image content/i.test(msg) ||
+    /multimodal/i.test(msg) ||
+    /unsupported.*image/i.test(msg) ||
+    /does not support.*image/i.test(msg) ||
+    /invalid_request_error.*image/i.test(msg)
+  );
+}
+
 async function tryModelsSequentially<T>(
   requestModelName: string,
   tryFn: (model: ModelRow) => Promise<T> | T,
@@ -149,11 +164,20 @@ async function tryModelsSequentially<T>(
     } catch (err) {
       const error = err as Error & { status?: number; statusCode?: number };
       const status = error.status || error.statusCode || 500;
-      console.error(`[proxy] Model "${model.name}" failed (${status}): ${(err as Error).message}`, {
+      const errMsg = (err as Error).message;
+      const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'upstream_error';
+      console.error(`[proxy] Model "${model.name}" failed (${status}): ${errMsg}`, {
         error: err,
         model: { id: model.id, name: model.name, api_format: model.api_format },
         requestModelName,
       });
+      errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
+
+      // 不支持多模态等客户端错误：直接抛出，不锁定模型、不故障转移
+      if (status === 400 && isMultimodalNotSupportedError(err)) {
+        throw err;
+      }
+
       db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(now, model.id);
     }
   }
@@ -240,19 +264,22 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           );
         } else {
           const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create({
-            model: provider.modelName,
-            messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-            max_tokens: params.maxTokens,
-            temperature: params.temperature,
-            top_p: params.topP,
-            tools: params.tools
-              ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-              : undefined,
-            tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
-            stream: true,
-            stream_options: { include_usage: true },
-          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+          const stream = await client.chat.completions.create(
+            {
+              model: provider.modelName,
+              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+              max_tokens: params.maxTokens,
+              temperature: params.temperature,
+              top_p: params.topP,
+              tools: params.tools
+                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
+                : undefined,
+              tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
+              stream: true,
+              stream_options: { include_usage: true },
+            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+          );
 
           await processChatStream(stream, res, provider.modelName, {
             modelId: model.id,
@@ -263,11 +290,25 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
-        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`, {
+        const errMsg = (err as Error).message;
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'chat_stream_error';
+        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${errMsg}`, {
           error: err,
           model: { id: model.id, name: model.name, api_format: model.api_format },
           requestModelName,
         });
+        errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
+
+        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
+        if (status === 400 && isMultimodalNotSupportedError(err)) {
+          if (!res.headersSent) {
+            res.status(400).json({
+              error: { message: errMsg, type: 'invalid_request_error', status: 400 },
+            });
+          }
+          return;
+        }
+
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
         if (res.headersSent) return;
@@ -285,26 +326,39 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
 
   // 非流式
   let usedModel: ModelRow | undefined;
-  const result = await tryModelsSequentially(
-    requestModelName,
-    async (model: ModelRow) => {
-      const provider = createModelProvider(model);
-      usedModel = model;
+  let result: any = null;
+  try {
+    result = await tryModelsSequentially(
+      requestModelName,
+      async (model: ModelRow) => {
+        const provider = createModelProvider(model);
+        usedModel = model;
 
-      if (provider.type === 'anthropic') {
-        return callAnthropic(provider, {
-          ...params,
-          maxOutputTokens: params.maxTokens,
-        });
-      } else {
-        return callOpenAIChat(provider, {
-          ...params,
-          maxOutputTokens: params.maxTokens,
-        });
-      }
-    },
-    userId,
-  );
+        if (provider.type === 'anthropic') {
+          return callAnthropic(provider, {
+            ...params,
+            maxOutputTokens: params.maxTokens,
+          });
+        } else {
+          return callOpenAIChat(provider, {
+            ...params,
+            maxOutputTokens: params.maxTokens,
+          });
+        }
+      },
+      userId,
+    );
+  } catch (err) {
+    // 不支持多模态等客户端错误：直接返回错误
+    if (isMultimodalNotSupportedError(err)) {
+      const status = (err as any).status || (err as any).statusCode || 400;
+      res.status(status).json({
+        error: { message: (err as Error).message, type: 'invalid_request_error', status },
+      });
+      return;
+    }
+    throw err;
+  }
 
   if (!result) {
     res.status(503).json({
@@ -385,17 +439,20 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
         } else {
           // openai-chat → Chat Completions API → 转换为 Responses SSE
           const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create({
-            model: provider.modelName,
-            messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-            max_tokens: params.maxTokens,
-            temperature: params.temperature,
-            tools: tools
-              ? tools.map((t) => ({ type: 'function' as const, function: t.function }))
-              : undefined,
-            stream: true,
-            stream_options: { include_usage: true },
-          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+          const stream = await client.chat.completions.create(
+            {
+              model: provider.modelName,
+              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+              max_tokens: params.maxTokens,
+              temperature: params.temperature,
+              tools: tools
+                ? tools.map((t) => ({ type: 'function' as const, function: t.function }))
+                : undefined,
+              stream: true,
+              stream_options: { include_usage: true },
+            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+          );
 
           await streamChatAsResponses(stream, res, provider.modelName, {
             modelId: model.id,
@@ -406,7 +463,21 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
-        console.error(`[responses stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        const errMsg = (err as Error).message;
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'responses_stream_error';
+        console.error(`[responses stream] Model "${model.name}" failed (${status}): ${errMsg}`);
+        errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
+
+        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
+        if (status === 400 && isMultimodalNotSupportedError(err)) {
+          if (!res.headersSent) {
+            res.status(400).json({
+              error: { message: errMsg, type: 'invalid_request_error', status: 400 },
+            });
+          }
+          return;
+        }
+
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
         if (res.headersSent) return;
@@ -423,31 +494,43 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
   }
 
   // 非流式
-  const result = await tryModelsSequentially(
-    requestModelName,
-    async (model: ModelRow) => {
-      const provider = createModelProvider(model);
+  let result: any = null;
+  try {
+    result = await tryModelsSequentially(
+      requestModelName,
+      async (model: ModelRow) => {
+        const provider = createModelProvider(model);
 
-      if (provider.type === 'anthropic') {
-        return callAnthropic(provider, {
-          ...params,
-          system: chatBody.system as string,
-          maxOutputTokens: params.maxTokens,
-        });
-      } else if (provider.type === 'openai-responses') {
-        return callOpenAIResponses(provider, {
-          ...params,
-          maxOutputTokens: params.maxTokens,
-        }, body);
-      } else {
-        return callOpenAIChat(provider, {
-          ...params,
-          maxOutputTokens: params.maxTokens,
-        });
-      }
-    },
-    userId,
-  );
+        if (provider.type === 'anthropic') {
+          return callAnthropic(provider, {
+            ...params,
+            system: chatBody.system as string,
+            maxOutputTokens: params.maxTokens,
+          });
+        } else if (provider.type === 'openai-responses') {
+          return callOpenAIResponses(provider, {
+            ...params,
+            maxOutputTokens: params.maxTokens,
+          }, body);
+        } else {
+          return callOpenAIChat(provider, {
+            ...params,
+            maxOutputTokens: params.maxTokens,
+          });
+        }
+      },
+      userId,
+    );
+  } catch (err) {
+    if (isMultimodalNotSupportedError(err)) {
+      const status = (err as any).status || (err as any).statusCode || 400;
+      res.status(status).json({
+        error: { message: (err as Error).message, type: 'invalid_request_error', status },
+      });
+      return;
+    }
+    throw err;
+  }
 
   if (!result) {
     res.status(503).json({
@@ -565,18 +648,21 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
         } else if (provider.type === 'openai-chat' || provider.type === 'openai-responses') {
           // OpenAI Chat/Responses → Anthropic SSE 转换
           const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create({
-            model: provider.modelName,
-            messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-            max_tokens: params.maxOutputTokens,
-            temperature: params.temperature,
-            top_p: params.topP,
-            tools: params.tools
-              ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-              : undefined,
-            stream: true,
-            stream_options: { include_usage: true },
-          } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+          const stream = await client.chat.completions.create(
+            {
+              model: provider.modelName,
+              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+              max_tokens: params.maxOutputTokens,
+              temperature: params.temperature,
+              top_p: params.topP,
+              tools: params.tools
+                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
+                : undefined,
+              stream: true,
+              stream_options: { include_usage: true },
+            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+          );
 
           await streamChatAsAnthropicSSE(stream, res, provider.modelName, promptTokens, model.id);
         }
@@ -584,7 +670,22 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
-        console.error(`[anthropic messages stream] Model "${model.name}" failed (${status}): ${(err as Error).message}`);
+        const errMsg = (err as Error).message;
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'anthropic_stream_error';
+        console.error(`[anthropic messages stream] Model "${model.name}" failed (${status}): ${errMsg}`);
+        errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
+
+        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
+        if (status === 400 && isMultimodalNotSupportedError(err)) {
+          if (!res.headersSent) {
+            res.status(400).json(toAnthropicError(errMsg, 'invalid_request_error'));
+          } else {
+            writeSSEEvent(res, 'error', { type: 'error', error: { type: 'invalid_request_error', message: errMsg } });
+            res.end();
+          }
+          return;
+        }
+
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
         if (res.headersSent) return;
@@ -606,32 +707,42 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
   }
 
   // 非流式处理
-  const result = await tryModelsSequentially(
-    requestModelName,
-    async (model: ModelRow) => {
-      const provider = createModelProvider(model);
+  let result: any = null;
+  try {
+    result = await tryModelsSequentially(
+      requestModelName,
+      async (model: ModelRow) => {
+        const provider = createModelProvider(model);
 
-      if (provider.type === 'anthropic') {
-        // 原生 Anthropic 调用 — 直接返回
-        return callAnthropicMessages(provider, {
-          ...params,
-          maxOutputTokens: params.maxOutputTokens,
-        });
-      } else if (provider.type === 'openai-chat' || provider.type === 'openai-responses') {
-        // OpenAI Chat → 转换为 Anthropic 格式
-        const chatResult = await callOpenAIChat(provider, {
-          ...params,
-          maxOutputTokens: params.maxOutputTokens,
-        });
-        return convertOpenAIChatToAnthropicResponse(
-          chatResult as unknown as Record<string, unknown>,
-          body,
-        );
-      }
-      return null;
-    },
-    userId,
-  );
+        if (provider.type === 'anthropic') {
+          // 原生 Anthropic 调用 — 直接返回
+          return callAnthropicMessages(provider, {
+            ...params,
+            maxOutputTokens: params.maxOutputTokens,
+          });
+        } else if (provider.type === 'openai-chat' || provider.type === 'openai-responses') {
+          // OpenAI Chat → 转换为 Anthropic 格式
+          const chatResult = await callOpenAIChat(provider, {
+            ...params,
+            maxOutputTokens: params.maxOutputTokens,
+          });
+          return convertOpenAIChatToAnthropicResponse(
+            chatResult as unknown as Record<string, unknown>,
+            body,
+          );
+        }
+        return null;
+      },
+      userId,
+    );
+  } catch (err) {
+    if (isMultimodalNotSupportedError(err)) {
+      const status = (err as any).status || (err as any).statusCode || 400;
+      res.status(status).json(toAnthropicError((err as Error).message, 'invalid_request_error'));
+      return;
+    }
+    throw err;
+  }
 
   if (!result) {
     res.status(503).json(toAnthropicError('所有模型均不可用', 'overloaded_error'));
@@ -826,7 +937,17 @@ userRouter.use((req: Request, res: Response, next) => {
 userRouter.get('/v1/test', async (req: Request, res: Response) => {
   const reqWithUser = req as RequestWithUser;
   const userId = reqWithUser.proxyUserId;
-  const available = getAvailableModels(userId);
+  const username = reqWithUser.proxyUsername;
+
+  console.log('[test] Username:', username, 'UserId:', userId);
+
+  // 获取所有模型（不过滤锁定和禁用状态，用于测试）
+  const userModels = userId ? getAllModels(userId) : [];
+  const globalModels = getAllModels(); // 无参数获取所有模型
+  const available = [...userModels, ...globalModels.filter(m => !userModels.some(um => um.id === m.id))];
+
+  console.log('[test] User models count:', userModels.length, 'Global models count:', globalModels.length, 'Total:', available.length);
+
   if (available.length === 0) {
     res.status(404).json({ error: { message: 'no available model', type: 'upstream_error', status: 503 } });
     return;
@@ -836,11 +957,16 @@ userRouter.get('/v1/test', async (req: Request, res: Response) => {
     typeof req.query.model === 'string' && req.query.model.trim() !== ''
       ? req.query.model.trim()
       : '';
+
+  console.log('[test] Requested model:', requestedModel);
+  console.log('[test] Available models:', available.map(m => ({ name: m.name, model_name: m.model_name, id: m.id, user_id: m.user_id, isDisable: m.isDisable })));
+
   const model = requestedModel
     ? available.find((m) => m.name === requestedModel || m.model_name === requestedModel)
     : available[0];
 
   if (!model) {
+    console.log('[test] Model not found. Requested:', requestedModel);
     res.status(404).json({ error: { message: 'model not found', type: 'upstream_error', status: 404 } });
     return;
   }
@@ -852,12 +978,42 @@ userRouter.get('/v1/test', async (req: Request, res: Response) => {
 
   try {
     const provider = createModelProvider(model);
-    const chatResult = await callOpenAIChat(provider, {
-      messages: [{ role: 'user' as const, content: queryContent }],
-      maxOutputTokens: MAX_RESPONSE_TOKENS,
-    });
+    const messages = [{ role: 'user' as const, content: queryContent }];
+    const promptTokens = estimateMessagesTokens(messages);
 
-    const promptTokens = estimateMessagesTokens([{ role: 'user' as const, content: queryContent }]);
+    let chatResult: any;
+    if (provider.type === 'anthropic') {
+      // Anthropic SDK 要求使用流式调用
+      const stream = await streamAnthropicMessages(provider, {
+        messages,
+        maxOutputTokens: MAX_RESPONSE_TOKENS,
+      });
+
+      let text = '';
+      let usage: { input_tokens?: number; output_tokens?: number } | null = null;
+
+      for await (const event of stream as any) {
+        if (event.type === 'content_block_delta' && event.delta?.text) {
+          text += event.delta.text;
+        } else if (event.type === 'message_delta' && event.usage) {
+          usage = event.usage;
+        }
+      }
+
+      chatResult = {
+        choices: [{ message: { content: text } }],
+        usage: usage ? {
+          prompt_tokens: usage.input_tokens ?? 0,
+          completion_tokens: usage.output_tokens ?? 0,
+          total_tokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
+        } : null,
+      };
+    } else {
+      chatResult = await callOpenAIChat(provider, {
+        messages,
+        maxOutputTokens: MAX_RESPONSE_TOKENS,
+      });
+    }
 
     if (chatResult.usage) {
       trackTokenUsage(model.id, chatResult.usage as any);

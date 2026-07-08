@@ -8,13 +8,13 @@
         "model": "deepseek-v4-flash",
         "content_length": "1000000",
         "max_token": "384000",
-        "capabilities": ["completion", "tools", "thinking", "vision"]
+        "capabilities": ["completion", "tools", "thinking"]
       },
       {
         "model": "deepseek-v4-pro",
         "content_length": "1000000",
         "max_token": "384000",
-        "capabilities": ["completion", "tools", "thinking", "vision"]
+        "capabilities": ["completion", "tools", "thinking"]
       }
     ]
   },
@@ -206,13 +206,13 @@
         "model": "deepseek-v4-flash",
         "content_length": "1000000",
         "max_token": "384000",
-        "capabilities": ["completion", "tools", "thinking", "vision"]
+        "capabilities": ["completion", "tools", "thinking"]
       },
       {
         "model": "deepseek-v4-pro",
         "content_length": "1000000",
         "max_token": "384000",
-        "capabilities": ["completion", "tools", "thinking", "vision"]
+        "capabilities": ["completion", "tools", "thinking"]
       },
       {
         "model": "kimi-k2.6",

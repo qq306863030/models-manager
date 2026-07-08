@@ -1,185 +1,241 @@
-.model-card-wrap {
-  position: relative;
-  flex-shrink: 0;
-  width: calc(25% - 12px);
-  min-width: 280px;
-  max-width: 400px;
+// ========== 模型行样式 ==========
+.model-row-wrap {
+  width: 100%;
 
-  // 拖拽时显示拖拽样式
-  &.sortable-ghost {
-    opacity: 0.5;
-  }
-
-  &.sortable-drag .model-card {
-    transform: rotate(2deg);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  &.is-editing {
+    border-bottom: 2px solid #409eff;
   }
 }
 
-.model-card {
+.model-row {
+  display: flex;
+  align-items: center;
   width: 100%;
-  height: 100%;
+  height: 48px;
+  border-bottom: 1px solid #ebeef5;
   cursor: pointer;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  transition: border-color 0.3s, box-shadow 0.3s;
-  position: relative;
+  transition: background-color 0.2s, box-shadow 0.2s;
   background: #fff;
 
-  &.is-selected {
-    border-color: #409eff;
-    box-shadow: 0 4px 16px rgba(64, 158, 255, 0.2);
-  }
-
   &:hover {
-    border-color: #409eff;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    background: #f5f7fa;
   }
 
-// 拖拽排序提示
-  .card-actions {
+  &.is-selected {
+    background: #ecf5ff;
+  }
+
+  // ========== 各列单元格 ==========
+  .row-cell {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 10px;
-    border-bottom: 1px solid #f4f4f5;
-    background: #fafafa;
-    border-radius: 8px 8px 0 0;
+    height: 100%;
+    padding: 0 8px;
+    overflow: hidden;
+  }
+
+  // 拖拽手柄
+  .cell-drag {
+    width: 36px;
+    flex-shrink: 0;
+    justify-content: center;
     cursor: grab;
+    color: #c0c4cc;
+    transition: color 0.2s;
+
+    &:hover {
+      color: #409eff;
+    }
 
     &:active {
       cursor: grabbing;
     }
-
-    .card-checkbox {
-      flex-shrink: 0;
-      height: 24px;
-    }
-
-    .card-action-buttons {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
-
-      .state-btn {
-        color: #909399;
-        border-color: #dcdfe6;
-        background: #fff;
-      }
-
-      .lock-btn.is-active {
-        color: #fff;
-        border-color: #e6a23c;
-        background: #e6a23c;
-      }
-
-      .disable-btn.is-active {
-        color: #fff;
-        border-color: #f56c6c;
-        background: #f56c6c;
-      }
-    }
   }
 
-  // 卡片主体内容
-  .card-body {
-    padding: 0 14px 14px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  // 复选框
+  .cell-checkbox {
+    width: 36px;
+    flex-shrink: 0;
+    justify-content: center;
+  }
 
-    // 标题（粗体，与模型名称同字号）
-    .card-title {
+  // 名称
+  .cell-name {
+    width: 300px;
+    flex-shrink: 0;
+    gap: 4px;
+
+    .cell-text {
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 600;
       color: #303133;
-      line-height: 1.5;
-      word-break: break-all;
-      margin-bottom: 2px;
-      display: flex;
-      align-items: center;
-
-      .card-title-text {
-        max-width: 90%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        margin-right: 5px;
-      }
-
-      .copy-label-btn {
-        flex-shrink: 0;
-        padding: 2px;
-        color: #909399;
-        font-size: 12px;
-
-        &:hover {
-          color: #409eff;
-        }
-      }
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 280px;
     }
 
-    .card-row {
-      display: flex;
-      align-items: flex-start;
+    .copy-name-btn {
+      flex-shrink: 0;
+      padding: 2px;
+      color: #909399;
       font-size: 12px;
-      line-height: 1.5;
-      gap: 4px;
 
-      .card-label {
-        color: #909399;
-        flex-shrink: 0;
-        width: 80px;
-      }
-
-      .card-value {
-        color: #303133;
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .card-value-url {
-        font-size: 11px;
-        color: #606266;
-        font-family: monospace;
-      }
-
-      .card-value-key {
-        color: #606266;
-        font-family: monospace;
-      }
-
-      .card-value-stat {
-        color: #e6a23c;
-        font-weight: 600;
-      }
-
-      &.card-row-stat {
-        background: linear-gradient(90deg, #fdf6ec 0%, #fef9f3 100%);
-        padding: 4px 8px;
-        border-radius: 4px;
-        margin-top: 2px;
+      &:hover {
+        color: #409eff;
       }
     }
   }
 
-  // 编辑模式表单：label 统一宽度，输入框占满剩余空间
+  // 模型名称
+  .cell-model-name {
+    width: 160px;
+    flex-shrink: 0;
+
+    .cell-text {
+      font-size: 12px;
+      color: #606266;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  // URL
+  .cell-url {
+    width: 300px;
+    flex-shrink: 0;
+    gap: 2px;
+
+    .copy-url-btn {
+      flex-shrink: 0;
+      padding: 2px;
+      color: #909399;
+      font-size: 12px;
+
+      &:hover {
+        color: #409eff;
+      }
+    }
+
+    .cell-text-url {
+      font-size: 11px;
+      color: #909399;
+      font-family: 'Consolas', 'Monaco', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  // 能力标签
+  .cell-capabilities {
+    width: 250px;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    gap: 2px;
+    overflow: hidden;
+
+    .capability-tag {
+      margin-right: 0;
+      flex-shrink: 0;
+    }
+  }
+
+  // 统计数据
+  .cell-consume,
+  .cell-call-count {
+    width: 120px;
+    flex-shrink: 0;
+    justify-content: center;
+
+    .cell-text-stat {
+      color: #e6a23c;
+      font-weight: 600;
+      font-size: 12px;
+    }
+  }
+
+  // 状态按钮
+  .cell-status {
+    width: 120px;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 4px;
+
+    .state-btn {
+      color: #909399;
+      border-color: #dcdfe6;
+      background: #fff;
+    }
+
+    .lock-btn.is-active {
+      color: #fff;
+      border-color: #e6a23c;
+      background: #e6a23c;
+    }
+
+    .disable-btn.is-active {
+      color: #fff;
+      border-color: #f56c6c;
+      background: #f56c6c;
+    }
+
+    .test-btn {
+      color: #909399;
+      border-color: #dcdfe6;
+      background: #fff;
+    }
+
+    .test-btn.is-success {
+      color: #fff;
+      border-color: #67c23a;
+      background: #67c23a;
+    }
+
+    .test-btn.is-danger {
+      color: #fff;
+      border-color: #f56c6c;
+      background: #f56c6c;
+    }
+  }
+
+  // 操作按钮
+  .cell-actions {
+    width: 150px;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 4px;
+  }
+}
+
+// ========== 编辑模式 ==========
+.model-row-edit {
+  height: auto;
+  padding: 12px 16px;
+  cursor: default;
+
+  &:hover {
+    background: #fff;
+  }
+
   .card-edit-form {
-    padding: 12px 10px;
+    width: 100%;
+
+    .edit-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+    }
 
     :deep(.el-form-item) {
       display: flex;
       align-items: center;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
 
       .el-form-item__label {
         font-size: 12px;
-        padding-left: 10px;
+        padding-left: 8px;
         text-align: left;
         line-height: 28px;
       }
@@ -201,30 +257,44 @@
       }
     }
 
-    // 按钮行：底部右对齐
-    :deep(.el-form-item:last-child) {
-      margin-bottom: 0;
-      .el-form-item__content {
-        display: flex;
-        justify-content: flex-end;
-      }
+    // 覆盖 Element Plus 默认居右：label 居左
+    :deep(.el-form-item__label) {
+      text-align: left !important;
+      justify-content: flex-start !important;
     }
-  }
 
-  // 覆盖 Element Plus 默认居右：label 居左
-  :deep(.el-form-item__label) {
-    text-align: left !important;
-    justify-content: flex-start !important;
+    .edit-form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
   }
 }
 
-// 能力标签样式
-.card-capabilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  
-  .capability-tag {
-    margin-right: 0;
+// ========== 拖拽排序样式 ==========
+.sortable-ghost {
+  opacity: 0.4;
+  background: #ecf5ff !important;
+
+  .model-row {
+    background: #ecf5ff;
+  }
+}
+
+.sortable-chosen {
+  .model-row {
+    background: #f0f7ff;
+  }
+}
+
+.sortable-drag {
+  opacity: 1 !important;
+  background: #fff !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+
+  .model-row {
+    background: #fff;
   }
 }

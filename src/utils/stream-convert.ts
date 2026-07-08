@@ -13,10 +13,12 @@ import {
   generateRandomString,
   convertToAnthropicMessages,
   convertToAnthropicTools,
+  REQUEST_TIMEOUT_MS,
   type AIProvider,
   type ChatCallParams,
 } from './format-convert';
 import { trackTokenUsage } from './tokenTracker';
+import { errorBroadcaster } from './errorBroadcaster';
 
 // ========== SSE 写入辅助 ==========
 
@@ -376,7 +378,10 @@ export async function processChatStream(
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'chat_stream_error';
     console.error('[chat stream] fatal:', err);
+    errorBroadcaster.emitError(options?.modelId ?? 0, modelName, errorType, errMsg);
     if (!res.writableEnded) res.end();
   }
 }
@@ -397,14 +402,17 @@ export async function processAnthropicStream(
     params.system,
   );
 
-  const stream = await client.messages.stream({
-    model: provider.modelName,
-    max_tokens: params.maxOutputTokens,
-    messages: anthropicParams.messages,
-    system: anthropicParams.system,
-    temperature: params.temperature,
-    tools: params.tools ? convertToAnthropicTools(params.tools as unknown as any[]) : undefined,
-  });
+  const stream = await client.messages.stream(
+    {
+      model: provider.modelName,
+      max_tokens: params.maxOutputTokens,
+      messages: anthropicParams.messages,
+      system: anthropicParams.system,
+      temperature: params.temperature,
+      tools: params.tools ? convertToAnthropicTools(params.tools as unknown as any[]) : undefined,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   const converter = new AnthropicStreamConverter(provider.modelName);
 
@@ -442,7 +450,10 @@ export async function processAnthropicStream(
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'anthropic_stream_error';
     console.error('[anthropic stream] fatal:', err);
+    errorBroadcaster.emitError(options?.modelId ?? 0, provider.modelName, errorType, errMsg);
     if (!res.writableEnded) res.end();
   }
 }
@@ -501,14 +512,17 @@ export async function processOpenAIResponsesStream(
     parameters: (t as unknown as { function: { parameters: Record<string, unknown> } }).function.parameters,
   }));
 
-  const stream = await client.responses.create({
-    model: provider.modelName,
-    input: responseInput as unknown as any,
-    max_output_tokens: params.maxOutputTokens,
-    temperature: params.temperature,
-    tools: tools as unknown as any,
-    stream: true,
-  });
+  const stream = await client.responses.create(
+    {
+      model: provider.modelName,
+      input: responseInput as unknown as any,
+      max_output_tokens: params.maxOutputTokens,
+      temperature: params.temperature,
+      tools: tools as unknown as any,
+      stream: true,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   const responseId = `resp_${generateRandomString(12)}`;
   const createdAt = Math.floor(Date.now() / 1000);
@@ -586,7 +600,10 @@ export async function processOpenAIResponsesStream(
       }
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'responses_stream_error';
     console.error('[responses stream] fatal:', err);
+    errorBroadcaster.emitError(options?.modelId ?? 0, provider.modelName, errorType, errMsg);
     if (!res.writableEnded) res.end();
   }
 }

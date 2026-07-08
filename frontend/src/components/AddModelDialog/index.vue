@@ -2,7 +2,7 @@
   <el-dialog
     v-model="dialogVisible"
     :title="dialogTitle"
-    width="1100px"
+    width="950px"
     :close-on-click-modal="false"
     @close="handleClose">
     <el-form
@@ -27,10 +27,10 @@
       </el-form-item>
 
       <!-- 名称前缀（非必填） -->
-      <el-form-item label="名称">
+      <el-form-item label="模型名称前缀">
         <el-input
           v-model="formData.name"
-          placeholder="请输入名称前缀（可选，将与显示名称/模型名称合并）" />
+          placeholder="请输入名称前缀（可选，将与模型名称/模型ID合并）" />
       </el-form-item>
 
       <el-form-item label="Base URL" prop="url">
@@ -72,8 +72,8 @@
 
       <!-- 表头 -->
       <div class="model-row model-row-header">
+        <span class="header-label">模型ID</span>
         <span class="header-label">模型名称</span>
-        <span class="header-label">显示名称</span>
         <span class="header-label">最大内容长度</span>
         <span class="header-label">最大 Token</span>
         <span class="header-label">模态能力</span>
@@ -85,7 +85,7 @@
         v-for="(row, idx) in formData.rows"
         :key="row.key"
         class="model-row">
-        <!-- 模型名称：下拉搜索框 -->
+        <!-- 模型ID：下拉搜索框 -->
         <el-select
           v-model="row.model_name"
           placeholder="请搜索或选择模型"
@@ -103,7 +103,7 @@
             :value="opt.value" />
         </el-select>
 
-        <!-- 显示名称：输入框，显示 [名称]_[模型名称] -->
+        <!-- 模型名称：输入框，显示 [模型名称前缀]_[模型ID] -->
         <el-input
           v-model="row.model_label"
           :placeholder="getDefaultLabel(row)"
@@ -420,7 +420,7 @@ const handleSubmit = async () => {
   for (let i = 0; i < formData.rows.length; i++) {
     const row = formData.rows[i]
     if (!row.model_name?.trim()) {
-      ElMessage.warning(`第 ${i + 1} 行：模型名称不能为空`)
+      ElMessage.warning(`第 ${i + 1} 行：模型ID不能为空`)
       return
     }
     if (!row.max_content_length || row.max_content_length <= 0) {
@@ -442,7 +442,7 @@ const handleSubmit = async () => {
     const name = displayNames[i]
     if (!name) continue
     if (seenInList.has(name)) {
-      ElMessage.warning(`第 ${i + 1} 行：显示名称 "${name}" 与列表中其他行重复，请修改`)
+      ElMessage.warning(`第 ${i + 1} 行：模型名称 "${name}" 与列表中其他行重复，请修改`)
       return
     }
     seenInList.add(name)
@@ -456,7 +456,7 @@ const handleSubmit = async () => {
       for (let i = 0; i < displayNames.length; i++) {
         const name = displayNames[i]
         if (name && dbNames.has(name)) {
-          ElMessage.warning(`第 ${i + 1} 行：显示名称 "${name}" 与已存在的模型重复，请修改`)
+          ElMessage.warning(`第 ${i + 1} 行：模型名称 "${name}" 与已存在的模型重复，请修改`)
           return
         }
       }

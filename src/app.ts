@@ -1,6 +1,8 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
+import http from 'http';
 import path from 'path';
 import morgan from 'morgan';
+import { WebSocketServer } from 'ws';
 import usersRouter from './routes/users';
 import settingsRouter from './routes/settings';
 import modelsRouter from './routes/models';
@@ -8,6 +10,7 @@ import tokenStatsRouter from './routes/tokenStats';
 import llmModelsRouter from './routes/llmModels';
 import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
+import { errorBroadcaster } from './utils/errorBroadcaster';
 
 const app: Application = express();
 const PORT = process.env.PORT || 11888;
@@ -97,11 +100,21 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
 });
 
+// 创建 HTTP 服务器并挂载 WebSocket
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', (ws) => {
+  errorBroadcaster.subscribe(ws);
+  ws.on('close', () => errorBroadcaster.unsubscribe(ws));
+});
+
 // 启动服务器
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`服务器运行在 http://localhost:${PORT}`);
   console.log(`API 地址: http://localhost:${PORT}/api`);
   console.log(`代理接口: http://localhost:${PORT}/v1/models 等`);
+  console.log(`WebSocket 地址: ws://localhost:${PORT}`);
 });
 
 export default app;

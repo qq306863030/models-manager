@@ -1,175 +1,187 @@
 <template>
-  <div class="model-card-wrap" :class="{ 'is-editing': isEditing }">
-    <el-card
-      :class="['model-card', { 'is-selected': isSelected }]"
-      shadow="never">
-      <!-- 点击卡片区域触发选中（除了编辑模式和操作按钮） -->
-      <div class="card-content" @click="handleSelect">
-      <!-- 显示模式 -->
-      <template v-if="!isEditing">
-        <!-- 操作按钮：单独一行，header 区域可拖拽 -->
-        <div class="card-actions" title="拖拽排序" @click.stop>
+  <div class="model-row-wrap" :class="{ 'is-editing': isEditing }">
+    <!-- 显示模式 -->
+    <template v-if="!isEditing">
+      <div class="model-row" :class="{ 'is-selected': isSelected }" @click="handleSelect">
+        <!-- 拖拽手柄 -->
+        <div class="row-cell cell-drag row-drag-handle" title="拖拽排序" @click.stop>
+          <el-icon :size="14"><Rank /></el-icon>
+        </div>
+
+        <!-- 复选框 -->
+        <div class="row-cell cell-checkbox" @click.stop>
           <el-checkbox
-            class="card-checkbox"
             :model-value="checked"
             title="选择模型"
             @mousedown.stop
             @change="handleCheckChange" />
-          <div class="card-action-buttons">
-            <el-button
-              class="state-btn lock-btn"
-              :class="{ 'is-active': model.isLock > 0 }"
-              size="small"
-              :icon="model.isLock > 0 ? Lock : Unlock"
-              circle
-              :title="model.isLock > 0 ? '已锁定，点击解锁' : '未锁定，点击锁定'"
-              @mousedown.stop
-              @click="handleToggleLock" />
-            <el-button
-              class="state-btn disable-btn"
-              :class="{ 'is-active': model.isDisable }"
-              size="small"
-              :icon="model.isDisable ? CircleClose : CircleCheck"
-              circle
-              :title="model.isDisable ? '已禁用，点击启用' : '已启用，点击禁用'"
-              @mousedown.stop
-              @click="handleToggleDisable" />
-            <el-button
-              type="default"
-              size="small"
-              :icon="CopyDocument"
-              circle
-              title="复制"
-              @mousedown.stop
-              @click="handleCopy" />
-            <el-button
-              type="primary"
-              size="small"
-              :icon="Edit"
-              circle
-              title="编辑"
-              @mousedown.stop
-              @click="handleEdit" />
-            <el-button
-              type="danger"
-              size="small"
-              :icon="Delete"
-              circle
-              title="删除"
-              @mousedown.stop
-              @click="handleDelete" />
-          </div>
         </div>
 
-        <!-- 卡片主体 -->
-        <div class="card-body">
-          <!-- 标题（粗体，字体与下方模型名称一致） -->
-          <div class="card-title">
-            <span :title="model.name" class="card-title-text">{{ model.name }}</span>
-            <el-button
-              class="copy-label-btn"
-              :icon="DocumentCopy"
-              size="small"
-              text
-              title="复制 Label"
-              @mousedown.stop
-              @click="handleCopyLabel" />
-          </div>
-          <div class="card-row">
-            <span class="card-label">模型名称:</span>
-            <span class="card-value" :title="model.model_name">{{ model.model_name }}</span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">URL:</span>
-            <span class="card-value card-value-url" :title="model.url">{{ model.url }}</span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">API Key:</span>
-            <span class="card-value card-value-key">••••••••</span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">Max_Content:</span>
-            <span class="card-value">{{ formatNumber(model.max_content_length) }}</span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">Max_Token:</span>
-            <span class="card-value">{{ formatNumber(model.max_token) }}</span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">模态能力:</span>
-            <span class="card-value card-capabilities">
-              <el-tag
-                v-for="cap in model.capabilities"
-                :key="cap"
-                size="small"
-                type="info"
-                class="capability-tag">
-                {{ getCapabilityLabel(cap) }}
-              </el-tag>
-            </span>
-          </div>
-          <div class="card-row card-row-stat">
-            <span class="card-label">今日消耗:</span>
-            <span class="card-value card-value-stat">{{ formatNumber(statSummary.todayToken) }}</span>
-          </div>
-          <div class="card-row card-row-stat">
-            <span class="card-label">调用次数:</span>
-            <span class="card-value card-value-stat">{{ formatNumber(statSummary.totalCallCount) }}</span>
-          </div>
+        <!-- 模型名称 -->
+        <div class="row-cell cell-name" @click.stop>
+          <el-button
+            class="copy-name-btn"
+            :icon="CopyDocument"
+            size="small"
+            text
+            title="复制模型名称"
+            @mousedown.stop
+            @click="handleCopyLabel" />
+          <span class="cell-text" :title="model.name">{{ model.name }}</span>
         </div>
-      </template>
 
-      <!-- 编辑模式 -->
-      <template v-else>
+        <!-- 模型ID -->
+        <div class="row-cell cell-model-name">
+          <span class="cell-text" :title="model.model_name">{{ model.model_name }}</span>
+        </div>
+
+        <!-- URL -->
+        <div class="row-cell cell-url" @click.stop>
+          <el-button
+            class="copy-url-btn"
+            :icon="CopyDocument"
+            size="small"
+            text
+            title="复制 URL"
+            @mousedown.stop
+            @click="handleCopyUrl" />
+          <span class="cell-text cell-text-url" :title="model.url">{{ model.url }}</span>
+        </div>
+
+        <!-- 能力 -->
+        <div class="row-cell cell-capabilities">
+          <el-tag
+            v-for="cap in model.capabilities"
+            :key="cap"
+            size="small"
+            type="info"
+            class="capability-tag">
+            {{ getCapabilityLabel(cap) }}
+          </el-tag>
+        </div>
+
+        <!-- 今日消耗 -->
+        <div class="row-cell cell-consume">
+          <span class="cell-text cell-text-stat">{{ formatNumber(statSummary.todayToken) }}</span>
+        </div>
+
+        <!-- 调用次数 -->
+        <div class="row-cell cell-call-count">
+          <span class="cell-text cell-text-stat">{{ formatNumber(statSummary.todayCallCount) }}</span>
+        </div>
+
+        <!-- 状态 -->
+        <div class="row-cell cell-status" @click.stop>
+          <el-button
+            class="state-btn lock-btn"
+            :class="{ 'is-active': model.isLock > 0 }"
+            size="small"
+            :icon="model.isLock > 0 ? Lock : Unlock"
+            circle
+            :title="model.isLock > 0 ? '已锁定，点击解锁' : '未锁定，点击锁定'"
+            @mousedown.stop
+            @click="handleToggleLock" />
+          <el-button
+            class="state-btn disable-btn"
+            :class="{ 'is-active': model.isDisable }"
+            size="small"
+            :icon="model.isDisable ? CircleClose : CircleCheck"
+            circle
+            :title="model.isDisable ? '已禁用，点击启用' : '已启用，点击禁用'"
+            @mousedown.stop
+            @click="handleToggleDisable" />
+          <el-button
+            class="state-btn test-btn"
+            :type="testStatus === 'success' ? 'success' : testStatus === 'error' ? 'danger' : 'info'"
+            size="small"
+            :icon="testStatus === 'success' ? CircleCheck : testStatus === 'error' ? CircleClose : VideoPlay"
+            circle
+            :loading="testing"
+            title="测试连接"
+            @mousedown.stop
+            @click="handleTest" />
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="row-cell cell-actions" @click.stop>
+          <el-button
+            type="default"
+            size="small"
+            :icon="CopyDocument"
+            circle
+            title="复制"
+            @mousedown.stop
+            @click="handleCopy" />
+          <el-button
+            type="primary"
+            size="small"
+            :icon="Edit"
+            circle
+            title="编辑"
+            @mousedown.stop
+            @click="handleEdit" />
+          <el-button
+            type="danger"
+            size="small"
+            :icon="Delete"
+            circle
+            title="删除"
+            @mousedown.stop
+            @click="handleDelete" />
+        </div>
+      </div>
+    </template>
+
+    <!-- 编辑模式 -->
+    <template v-else>
+      <div class="model-row model-row-edit">
         <el-form :model="editForm" label-width="90px" size="small" class="card-edit-form">
-          <el-form-item label="显示名称">
-            <el-input v-model="editForm.name" placeholder="请输入显示名称" />
-          </el-form-item>
-          <el-form-item label="模型名称">
-            <el-input v-model="editForm.model_name" placeholder="请输入模型名称" />
-          </el-form-item>
-          <el-form-item label="URL">
-            <el-input v-model="editForm.url" placeholder="请输入URL" />
-          </el-form-item>
-          <el-form-item label="API Key">
-            <el-input v-model="editForm.api_key" placeholder="请输入API Key" show-password />
-          </el-form-item>
-          <el-form-item label="Max_Content">
-            <el-input-number v-model="editForm.max_content_length" :min="1" :max="1000000" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="Max_Token">
-            <el-input-number v-model="editForm.max_token" :min="1" :max="1000000" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="模态能力">
-            <el-select
-              v-model="editForm.capabilities"
-              multiple
-              collapse-tags
-              collapse-tags-tooltip
-              
-              style="width: 100%">
-              <el-option
-                v-for="opt in CAPABILITIES_OPTIONS"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item class="card-edit-form-actions">
+          <div class="edit-form-grid">
+            <el-form-item label="模型名称">
+              <el-input v-model="editForm.name" placeholder="请输入模型名称" />
+            </el-form-item>
+            <el-form-item label="模型ID">
+              <el-input v-model="editForm.model_name" placeholder="请输入模型ID" />
+            </el-form-item>
+            <el-form-item label="URL">
+              <el-input v-model="editForm.url" placeholder="请输入URL" />
+            </el-form-item>
+            <el-form-item label="API Key">
+              <el-input v-model="editForm.api_key" placeholder="请输入API Key" show-password />
+            </el-form-item>
+            <el-form-item label="Max_Content">
+              <el-input-number v-model="editForm.max_content_length" :min="1" :max="1000000" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="Max_Token">
+              <el-input-number v-model="editForm.max_token" :min="1" :max="1000000" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="模态能力">
+              <el-select
+                v-model="editForm.capabilities"
+                multiple
+                style="width: 100%">
+                <el-option
+                  v-for="opt in CAPABILITIES_OPTIONS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </div>
+          <div class="edit-form-actions">
             <el-button type="info" size="small" :icon="Close" @click="handleCancelEdit" plain>取消</el-button>
             <el-button type="success" size="small" :icon="Check" :loading="submitting" @click="handleSubmitEdit">提交</el-button>
-          </el-form-item>
+          </div>
         </el-form>
-      </template>
       </div>
-    </el-card>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy } from '@element-plus/icons-vue'
+import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy, Rank, VideoPlay } from '@element-plus/icons-vue'
 import type { Model, ModelForm } from '@/api/modelService'
 import { CAPABILITIES_OPTIONS } from '@/types/enum'
 import type { ModelCardProps, ModelCardEmits } from './index'
@@ -185,7 +197,7 @@ const emit = defineEmits<ModelCardEmits>()
 
 // ========== Token 统计摘要 ==========
 const statSummary = computed(() => {
-  return props.statSummary ?? { todayToken: 0, totalToken: 0 }
+  return props.statSummary ?? { todayToken: 0, totalToken: 0, totalCallCount: 0, todayCallCount: 0 }
 })
 
 // ========== 编辑模式 ==========
@@ -211,14 +223,7 @@ const editForm = reactive<{
 })
 
 const handleEdit = () => {
-  editForm.name = props.model.name
-  editForm.model_name = props.model.model_name
-  editForm.url = props.model.url
-  editForm.api_key = props.model.api_key
-  editForm.max_content_length = props.model.max_content_length
-  editForm.max_token = props.model.max_token
-  editForm.capabilities = [...(props.model.capabilities ?? ["completion", "tools", "thinking"])]
-  isEditing.value = true
+  emit('edit', props.model)
 }
 
 const handleCancelEdit = () => {
@@ -255,7 +260,7 @@ const handleSubmitEdit = async () => {
       sort_index: props.model.sort_index,
       api_format: props.model.api_format,
       model_label_id: props.model.model_label_id,
-      capabilities: props.model.capabilities,
+      capabilities: editForm.capabilities,
       isLock: props.model.isLock,
       isDisable: props.model.isDisable,
     }
@@ -292,10 +297,58 @@ const handleToggleDisable = () => {
   emit('toggle-disable', props.model.id)
 }
 
+// ========== 测试连接 ==========
+const testing = ref(false)
+const testStatus = ref<'idle' | 'success' | 'error'>('idle')
+
+const handleTest = async () => {
+  if (testing.value) return
+  testing.value = true
+  testStatus.value = 'idle'
+  try {
+    const username = localStorage.getItem('auth_username') || ''
+    const url = `/${username}/v1/test?model=${encodeURIComponent(props.model.name)}`
+    const headers: Record<string, string> = {}
+    // 如果有自定义 API Key，携带它
+    const apiKey = localStorage.getItem('custom_api_key')
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+    const response = await fetch(url, { headers })
+    if (response.ok) {
+      testStatus.value = 'success'
+      ElMessage.success('连接成功')
+    } else {
+      const data = await response.json().catch(() => ({}))
+      testStatus.value = 'error'
+      ElMessage.error(`连接失败: ${data.error?.message || response.statusText}`)
+    }
+  } catch (err: any) {
+    testStatus.value = 'error'
+    ElMessage.error(`连接失败: ${err.message}`)
+  } finally {
+    testing.value = false
+    setTimeout(() => { testStatus.value = 'idle' }, 3000)
+  }
+}
+
+// 复制 URL
+const handleCopyUrl = () => {
+  const text = props.model.url
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('URL 已复制')
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
+}
+
 // 复制模型 Label
 const handleCopyLabel = () => {
   const text = props.model.name
-  // 优先使用现代 Clipboard API，支持 http 协议
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(() => {
       ElMessage.success('模型名称已复制')
@@ -307,7 +360,6 @@ const handleCopyLabel = () => {
   }
 }
 
-// 降级复制方法（支持 http 协议）
 const fallbackCopy = (text: string) => {
   const textarea = document.createElement('textarea')
   textarea.value = text
@@ -338,11 +390,6 @@ const formatNumber = (num: number): string => {
 
 <style lang="less">
 @import './index.less';
-
-// 覆盖 el-card 的 padding（仅 ModelCard 生效）
-.model-card .el-card__body {
-  padding: 0 !important;
-}
 
 .card-edit-form-actions {
   .el-form-item__content {

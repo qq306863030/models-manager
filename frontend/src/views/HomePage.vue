@@ -38,12 +38,6 @@
         <template #header>
           <div class="card-header">
             <div class="left">
-              <el-checkbox
-                v-model="isAllChecked"
-                :indeterminate="isIndeterminate"
-                @change="handleToggleAll">
-                全选
-              </el-checkbox>
               <span class="model-count">已选择 {{ checkedModelIds.length }} 个模型</span>
             </div>
             <div class="right">
@@ -51,51 +45,93 @@
                 v-if="checkedModelIds.length > 0"
                 type="danger"
                 size="small"
+                class="header-btn"
                 @click="handleBatchDelete">
                 <el-icon><Delete /></el-icon>
                 批量删除
               </el-button>
-              <el-button type="primary" size="small" @click="openAddDialog">
+              <el-button type="primary" size="small" class="header-btn" @click="openAddDialog">
                 <el-icon><Plus /></el-icon>
                 添加模型
               </el-button>
-              <el-button size="small" @click="openApiDialog">
+              <el-button size="small" class="header-btn" @click="handleExport">
+                <el-icon><Download /></el-icon>
+                导出
+              </el-button>
+              <el-button size="small" class="header-btn" @click="handleImportClick">
+                <el-icon><Upload /></el-icon>
+                导入
+              </el-button>
+              <input ref="importFileRef" type="file" accept=".json" style="display:none" @change="handleImportFile" />
+              <el-button size="small" class="header-btn" @click="openApiDialog">
                 <el-icon><DocumentChecked /></el-icon>
                 查看接口
               </el-button>
-              <el-button size="small" @click="openSettingsDialog">
+              <el-button size="small" class="header-btn" @click="openSettingsDialog">
                 <el-icon><Setting /></el-icon>
                 设置
+              </el-button>
+              <el-button size="small" class="header-btn" @click="errorLogVisible = true">
+                <el-icon><Notebook /></el-icon>
+                日志
               </el-button>
             </div>
           </div>
         </template>
 
         <!-- 模型列表（可拖拽排序） -->
-        <draggable
-          v-model="modelList"
-          item-key="id"
-          handle=".card-actions"
-          class="model-list-draggable"
-          :style="{ maxHeight: '630px','overflow-y': 'auto', 'overflow-x': 'hidden'}"
-          @end="onDragEnd">
-          <template #item="{ element }">
-            <ModelCard
-              :model="element"
-              :is-selected="selectedModelId === element.id"
-              :checked="checkedModelIds.includes(element.id)"
-              :stat-summary="modelStatMap.get(element.id)"
-              @select="selectModel"
-              @edit="openEditDialog(element)"
-              @check-change="(id, checked) => handleCheckChange(id, checked)"
-              @copy="handleCopy"
-              @delete="handleDelete"
-              @toggle-lock="handleToggleLock"
-              
-              @toggle-disable="handleToggleDisable"
-              @submit-edit="handleEditSubmit" />
-          </template>
-        </draggable>
+        <div class="model-list-wrapper">
+          <!-- 滚动容器：表头 sticky + 内容 -->
+          <div class="model-list-scroll">
+            <!-- 表头 -->
+            <div class="model-table-header">
+              <div class="header-cell header-drag"></div>
+              <div class="header-cell header-checkbox">
+                <el-checkbox
+                  v-model="isAllChecked"
+                  :indeterminate="isIndeterminate"
+                  @change="handleToggleAll" />
+              </div>
+              <div class="header-cell header-name">模型名称</div>
+              <div class="header-cell header-model-name">模型ID</div>
+              <div class="header-cell header-url">URL</div>
+              <div class="header-cell header-capabilities">模态能力</div>
+              <div class="header-cell header-consume">今日消耗</div>
+              <div class="header-cell header-call-count">调用次数</div>
+              <div class="header-cell header-status">状态</div>
+              <div class="header-cell header-actions">操作</div>
+            </div>
+
+            <!-- 数据行 -->
+            <draggable
+              v-model="modelList"
+              item-key="id"
+              handle=".row-drag-handle"
+              class="model-list-draggable"
+              :animation="150"
+              ghost-class="sortable-ghost"
+              chosen-class="sortable-chosen"
+              drag-class="sortable-drag"
+              @end="onDragEnd">
+              <template #item="{ element }">
+                <ModelCard
+                  :model="element"
+                  :is-selected="selectedModelId === element.id"
+                  :checked="checkedModelIds.includes(element.id)"
+                  :stat-summary="modelStatMap.get(element.id)"
+                  @select="selectModel"
+                  @edit="openEditDialog(element)"
+                  @check-change="(id, checked) => handleCheckChange(id, checked)"
+                  @copy="handleCopy"
+                  @delete="handleDelete"
+                  @toggle-lock="handleToggleLock"
+
+                  @toggle-disable="handleToggleDisable"
+                  @submit-edit="handleEditSubmit" />
+              </template>
+            </draggable>
+          </div>
+        </div>
 
         <el-empty
           v-if="modelList.length === 0"
@@ -186,6 +222,17 @@
 
     <!-- ========== 设置弹窗 ========== -->
     <SettingsDialog ref="settingsDialogRef" />
+
+    <!-- ========== 编辑模型弹窗 ========== -->
+    <EditModelDialog ref="editDialogRef" @submit="handleEditSubmit" />
+
+    <!-- ========== 导入冲突对话框 ========== -->
+    <ImportConflictDialog
+      ref="importConflictRef"
+      @resolve="handleImportConflictResolve" />
+
+    <!-- ========== 错误日志抽屉 ========== -->
+    <ErrorLogDrawer v-model:visible="errorLogVisible" />
   </div>
 </template>
 
@@ -193,7 +240,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -201,6 +248,11 @@ import ModelCard from '@/components/ModelCard/index.vue'
 import TokenLineChart from '@/components/TokenLineChart/index.vue'
 import SettingsDialog from '@/components/SettingsDialog/index.vue'
 import AddModelDialog from '@/components/AddModelDialog/index.vue'
+import EditModelDialog from '@/components/EditModelDialog/index.vue'
+import ErrorLogDrawer from '@/components/ErrorLogDrawer/index.vue'
+import ImportConflictDialog from '@/components/ImportConflictDialog/index.vue'
+import { useErrorLog } from '@/composables/useErrorLog'
+import { createModel, updateModel, type Model, type ModelForm } from '@/api/modelService'
 
 // 逻辑
 import {
@@ -249,11 +301,20 @@ const currentOrigin = window.location.origin
 const username = localStorage.getItem('auth_username') || ''
 const isAdmin = computed(() => localStorage.getItem('auth_is_admin') === '1')
 
-// 编辑弹窗 ref（暂未使用，后续可扩展）
+// 编辑弹窗 ref
 const settingsDialogRef = ref<InstanceType<typeof SettingsDialog>>()
 const openSettingsDialog = () => {
   settingsDialogRef.value?.openDialog()
 }
+
+const editDialogRef = ref<InstanceType<typeof EditModelDialog>>()
+const openEditDialog = (model: any) => {
+  editDialogRef.value?.openDialog(model)
+}
+
+// 错误日志
+const errorLogVisible = ref(false)
+const { connect: connectErrorLog, disconnect: disconnectErrorLog } = useErrorLog()
 
 const isIndeterminate = computed(() => {
   const len = checkedModelIds.value.length
@@ -299,10 +360,181 @@ const copyText = (text: string) => {
   }
 }
 
-// 打开编辑弹窗
-const openEditDialog = (model: any) => {
-  // 触发编辑事件
-  window.dispatchEvent(new CustomEvent('open-edit-model', { detail: model }))
+// ========== 导入/导出功能 ==========
+const importFileRef = ref<HTMLInputElement>()
+const importConflictRef = ref<InstanceType<typeof ImportConflictDialog>>()
+const importQueue = ref<Model[]>([])
+const importIndex = ref(0)
+const importAllAction = ref<'overwrite' | 'skip' | null>(null)
+
+// 导出：将模型配置导出为 JSON 文件
+const handleExport = () => {
+  const exportData = modelList.value.map(m => ({
+    name: m.name,
+    model_name: m.model_name,
+    url: m.url,
+    api_key: m.api_key,
+    max_content_length: m.max_content_length,
+    max_token: m.max_token,
+    sort_index: m.sort_index,
+    api_format: m.api_format,
+    model_label_id: m.model_label_id,
+    capabilities: m.capabilities,
+  }))
+  const json = JSON.stringify(exportData, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `models-export-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`已导出 ${exportData.length} 个模型配置`)
+}
+
+// 导入：触发文件选择
+const handleImportClick = () => {
+  importFileRef.value?.click()
+}
+
+// 处理导入文件
+const handleImportFile = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+
+  const reader = new FileReader()
+  reader.onload = async () => {
+    try {
+      const data = JSON.parse(reader.result as string)
+      if (!Array.isArray(data)) {
+        ElMessage.error('导入文件格式错误：应为 JSON 数组')
+        return
+      }
+      importQueue.value = data as Model[]
+      importIndex.value = 0
+      importAllAction.value = null
+      processNextImport()
+    } catch {
+      ElMessage.error('导入文件解析失败')
+    }
+  }
+  reader.readAsText(file)
+}
+
+// 逐条处理导入
+const processNextImport = async () => {
+  if (importIndex.value >= importQueue.value.length) {
+    ElMessage.success(`导入完成：共 ${importQueue.value.length} 个模型`)
+    fetchModels()
+    return
+  }
+
+  const item = importQueue.value[importIndex.value]
+
+  // 检查是否有重复（按 name 匹配）
+  const existing = modelList.value.find(m => m.name === item.name)
+
+  if (existing && importAllAction.value === 'overwrite') {
+    await doImportOverwrite(item, existing.id)
+    importIndex.value++
+    processNextImport()
+    return
+  }
+
+  if (existing && importAllAction.value === 'skip') {
+    importIndex.value++
+    processNextImport()
+    return
+  }
+
+  if (existing) {
+    // 弹出冲突对话框
+    importConflictRef.value?.open({
+      modelName: item.name,
+      current: importIndex.value + 1,
+      total: importQueue.value.length,
+    })
+    return
+  }
+
+  // 无重复，直接导入
+  await doImportCreate(item)
+  importIndex.value++
+  processNextImport()
+}
+
+// 创建新模型
+const doImportCreate = async (item: Model) => {
+  try {
+    const data: ModelForm = {
+      name: item.name,
+      model_name: item.model_name,
+      url: item.url,
+      api_key: item.api_key,
+      max_content_length: item.max_content_length,
+      max_token: item.max_token,
+      sort_index: item.sort_index,
+      api_format: item.api_format,
+      model_label_id: item.model_label_id,
+      capabilities: item.capabilities,
+    }
+    await createModel(data)
+  } catch {
+    // ignore
+  }
+}
+
+// 覆盖已有模型
+const doImportOverwrite = async (item: Model, existingId: number) => {
+  try {
+    const data: ModelForm = {
+      name: item.name,
+      model_name: item.model_name,
+      url: item.url,
+      api_key: item.api_key,
+      max_content_length: item.max_content_length,
+      max_token: item.max_token,
+      sort_index: item.sort_index,
+      api_format: item.api_format,
+      model_label_id: item.model_label_id,
+      capabilities: item.capabilities,
+    }
+    await updateModel(existingId, data)
+  } catch {
+    // ignore
+  }
+}
+
+// 处理冲突对话框的结果
+const handleImportConflictResolve = (action: 'overwrite' | 'skip' | 'cancel' | 'all-overwrite' | 'all-skip') => {
+  if (action === 'cancel') {
+    ElMessage.info('导入已取消')
+    return
+  }
+
+  if (action === 'all-overwrite') {
+    importAllAction.value = 'overwrite'
+    processNextImport()
+    return
+  }
+
+  if (action === 'all-skip') {
+    importAllAction.value = 'skip'
+    processNextImport()
+    return
+  }
+
+  const item = importQueue.value[importIndex.value]
+  const existing = modelList.value.find(m => m.name === item.name)
+
+  if (action === 'overwrite' && existing) {
+    doImportOverwrite(item, existing.id)
+  }
+
+  importIndex.value++
+  processNextImport()
 }
 
 // 处理函数（从 App.ts 导入）
@@ -335,12 +567,15 @@ onMounted(() => {
     loadStats()
     checkAndRefreshLockStatus()
   }, 20000)
+  // 连接错误日志 WebSocket
+  connectErrorLog()
 })
 onUnmounted(() => {
   if (statsRefreshTimer !== null) {
     clearInterval(statsRefreshTimer)
     statsRefreshTimer = null
   }
+  disconnectErrorLog()
 })
 </script>
 
@@ -391,17 +626,113 @@ onUnmounted(() => {
 }
 
 .model-list-card :deep(.el-card__body) {
-  padding: 20px;
-  overflow: unset;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 }
 
 .model-list-draggable {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  flex-direction: column;
+  gap: 0;
+}
+
+// ========== 模型列表容器 ==========
+.model-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 630px;
+  padding: 0 20px 20px;
+  background: #fff;
+}
+
+// ========== 滚动容器 ==========
+.model-list-scroll {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+}
+
+.model-table-header,
+.model-list-draggable {
+  width: max-content;
+  min-width: 100%;
+}
+
+// ========== 表头 ==========
+.model-table-header {
+  display: flex;
   align-items: center;
-  gap: 16px;
+  height: 40px;
+  background: #fafafa;
+  border-bottom: 2px solid #ebeef5;
+  font-size: 12px;
+  font-weight: 600;
+  color: #606266;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  .header-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 0 8px;
+  }
+
+  .header-drag {
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .header-checkbox {
+    width: 36px;
+    flex-shrink: 0;
+    justify-content: center;
+  }
+
+  .header-name {
+    width: 300px;
+    flex-shrink: 0;
+  }
+
+  .header-model-name {
+    width: 160px;
+    flex-shrink: 0;
+  }
+
+  .header-url {
+    width: 300px;
+    flex-shrink: 0;
+  }
+
+  .header-capabilities {
+    width: 250px;
+    flex-shrink: 0;
+  }
+
+  .header-consume,
+  .header-call-count {
+    width: 120px;
+    flex-shrink: 0;
+  }
+
+  .header-status {
+    width: 120px;
+    flex-shrink: 0;
+    justify-content: center;
+  }
+
+  .header-actions {
+    width: 150px;
+    flex-shrink: 0;
+    justify-content: center;
+  }
 }
 
 .stats-charts {
@@ -442,6 +773,14 @@ onUnmounted(() => {
   .right {
     display: flex;
     gap: 8px;
+    align-items: center;
+
+    .header-btn {
+      --el-button-size: 32px;
+      height: 32px;
+      padding: 8px 15px;
+      margin-left: 0 !important;
+    }
   }
 }
 

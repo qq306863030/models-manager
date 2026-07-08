@@ -86,6 +86,9 @@ export interface UserSettings {
 
 export const MAX_RESPONSE_TOKENS = 64000;
 
+/** 上游请求超时时间（毫秒） */
+export const REQUEST_TIMEOUT_MS = 30000;
+
 export const API_FORMAT = {
   OPENAI_CHAT: 1,
   ANTHROPIC: 2,
@@ -139,8 +142,11 @@ export function createModelProvider(model: ModelRow): AIProvider {
 
   switch (model.api_format) {
     case API_FORMAT.ANTHROPIC: {
+      // Anthropic SDK 的路由已包含 /v1（如 /v1/messages），
+      // 因此需要去掉 baseURL 末尾的 /v1，避免路径重复
+      const anthropicBaseURL = baseURL.replace(/\/v1$/, '');
       const client = new Anthropic({
-        baseURL,
+        baseURL: anthropicBaseURL,
         apiKey: model.api_key,
       });
       return { type: 'anthropic', client, modelName };
@@ -1003,18 +1009,21 @@ export async function callOpenAIChat(
 ): Promise<OpenAI.Chat.ChatCompletion> {
   const client = provider.client as OpenAI;
 
-  const response = await client.chat.completions.create({
-    model: provider.modelName,
-    messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-    max_tokens: params.maxOutputTokens,
-    temperature: params.temperature,
-    top_p: params.topP,
-    tools: params.tools
-      ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-      : undefined,
-    tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
-    stream: false,
-  });
+  const response = await client.chat.completions.create(
+    {
+      model: provider.modelName,
+      messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
+      max_tokens: params.maxOutputTokens,
+      temperature: params.temperature,
+      top_p: params.topP,
+      tools: params.tools
+        ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
+        : undefined,
+      tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
+      stream: false,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   // 移除响应中的 thinking 标签
   if (response.choices[0]?.message?.content) {
@@ -1034,15 +1043,18 @@ export async function callAnthropic(
     params.system,
   );
 
-  const response = await client.messages.create({
-    model: provider.modelName,
-    max_tokens: params.maxOutputTokens,
-    messages: anthropicParams.messages,
-    system: anthropicParams.system,
-    temperature: params.temperature,
-    tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
-    stream: false,
-  });
+  const response = await client.messages.create(
+    {
+      model: provider.modelName,
+      max_tokens: params.maxOutputTokens,
+      messages: anthropicParams.messages,
+      system: anthropicParams.system,
+      temperature: params.temperature,
+      tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
+      stream: false,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   return convertAnthropicToChatCompletion(response, provider.modelName);
 }
@@ -1094,14 +1106,17 @@ export async function callOpenAIResponses(
     parameters: (t as unknown as { function: { parameters: Record<string, unknown> } }).function.parameters,
   }));
 
-  const response = await client.responses.create({
-    model: provider.modelName,
-    input: responseInput as unknown as any,
-    max_output_tokens: params.maxOutputTokens,
-    temperature: params.temperature,
-    tools: tools as unknown as any,
-    stream: false,
-  });
+  const response = await client.responses.create(
+    {
+      model: provider.modelName,
+      input: responseInput as unknown as any,
+      max_output_tokens: params.maxOutputTokens,
+      temperature: params.temperature,
+      tools: tools as unknown as any,
+      stream: false,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   // 转换响应为 Chat Completion 格式
   const textParts = response.output.filter((o) => (o as unknown as { type: string }).type === 'text');
@@ -1171,15 +1186,18 @@ export async function callAnthropicMessages(
     params.system,
   );
 
-  const response = await client.messages.create({
-    model: provider.modelName,
-    max_tokens: params.maxOutputTokens,
-    messages: anthropicParams.messages,
-    system: anthropicParams.system,
-    temperature: params.temperature,
-    tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
-    stream: false,
-  });
+  const response = await client.messages.create(
+    {
+      model: provider.modelName,
+      max_tokens: params.maxOutputTokens,
+      messages: anthropicParams.messages,
+      system: anthropicParams.system,
+      temperature: params.temperature,
+      tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
+      stream: false,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 
   return response as unknown as Record<string, unknown>;
 }
@@ -1195,14 +1213,17 @@ export async function streamAnthropicMessages(
     params.system,
   );
 
-  return client.messages.stream({
-    model: provider.modelName,
-    max_tokens: params.maxOutputTokens,
-    messages: anthropicParams.messages,
-    system: anthropicParams.system,
-    temperature: params.temperature,
-    tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
-  });
+  return client.messages.stream(
+    {
+      model: provider.modelName,
+      max_tokens: params.maxOutputTokens,
+      messages: anthropicParams.messages,
+      system: anthropicParams.system,
+      temperature: params.temperature,
+      tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
+    },
+    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
 }
 
 // ========== 模型操作辅助 ==========

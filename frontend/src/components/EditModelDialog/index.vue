@@ -9,13 +9,13 @@
       :model="formData"
       :rules="formRules"
       label-width="120px">
-      <el-form-item label="名称" prop="name">
-        <el-input v-model="formData.name" placeholder="请输入名称" />
+      <el-form-item label="模型名称" prop="name">
+        <el-input v-model="formData.name" placeholder="请输入模型名称" />
       </el-form-item>
-      <el-form-item label="模型名称" prop="model_name">
+      <el-form-item label="模型ID" prop="model_name">
         <el-input
           v-model="formData.model_name"
-          placeholder="请输入模型名称" />
+          placeholder="请输入模型ID" />
       </el-form-item>
       <el-form-item label="接口地址" prop="url">
         <el-input v-model="formData.url" placeholder="请输入接口地址" />
@@ -49,9 +49,6 @@
           v-model="formData.max_token"
           :min="1"
           :max="100000" />
-      </el-form-item>
-      <el-form-item label="排序">
-        <el-input-number v-model="formData.sort_index" :min="0" />
       </el-form-item>
       <el-form-item label="模态能力">
         <el-select
@@ -113,8 +110,8 @@ const formData = reactive<EditFormData>({
 
 // 表单验证规则
 const formRules: FormRules = {
-  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
-  model_name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
+  model_name: [{ required: true, message: '请输入模型ID', trigger: 'blur' }],
   url: [{ required: true, message: '请输入接口地址', trigger: 'blur' }],
   api_key: [{ required: true, message: '请输入 API Key', trigger: 'blur' }],
 }

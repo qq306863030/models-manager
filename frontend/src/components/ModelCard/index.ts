@@ -7,6 +7,7 @@ export interface ModelStatSummary {
   todayToken: number
   totalToken: number
   totalCallCount: number
+  todayCallCount: number
 }
 
 export interface ModelCardProps {
@@ -18,6 +19,7 @@ export interface ModelCardProps {
 
 export interface ModelCardEmits {
   (e: 'select', id: number): void
+  (e: 'edit', model: Model): void
   (e: 'check-change', id: number, checked: boolean): void
   (e: 'copy', id: number): void
   (e: 'delete', id: number): void

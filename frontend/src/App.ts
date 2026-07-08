@@ -125,6 +125,7 @@ export interface ModelStatSummary {
   todayToken: number
   totalToken: number
   totalCallCount: number
+  todayCallCount: number
 }
 
 export const modelStatMap = computed(() => {
@@ -135,13 +136,14 @@ export const modelStatMap = computed(() => {
 
   for (const stat of allStats.value) {
     if (!map.has(stat.model_id)) {
-      map.set(stat.model_id, { todayToken: 0, totalToken: 0, totalCallCount: 0 })
+      map.set(stat.model_id, { todayToken: 0, totalToken: 0, totalCallCount: 0, todayCallCount: 0 })
     }
     const entry = map.get(stat.model_id)!
     entry.totalToken += stat.total_token
     entry.totalCallCount += stat.call_count
     if (stat.stat_date === today) {
       entry.todayToken += stat.total_token
+      entry.todayCallCount += stat.call_count
     }
   }
   return map
