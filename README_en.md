@@ -62,6 +62,7 @@ ai-server stop      # Stop service
 ai-server restart   # Restart service
 ai-server status    # Check status
 ai-server logs      # View logs
+ai-server clear     # Stop and remove the server from pm2
 ```
 
 ### Add Model

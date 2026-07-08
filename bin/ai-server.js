@@ -61,11 +61,13 @@ Commands:
   restart   Restart the server
   status    Show server status
   logs      Show server logs
+  clear     Stop and remove the server from pm2
 
 Examples:
   ai-server start
   ai-server stop
   ai-server restart
+  ai-server clear
   `);
 }
 
@@ -87,6 +89,19 @@ function logs() {
   });
 }
 
+function clear() {
+  console.log('🧹 Stopping and removing server from pm2...');
+  const pm2 = spawn('npx', ['pm2', 'delete', 'ecosystem.config.js'], {
+    cwd: rootDir,
+    stdio: 'inherit',
+    shell: true
+  });
+  pm2.on('error', (err) => {
+    console.error('❌ Failed to clear logs:', err);
+    process.exit(1);
+  });
+}
+
 switch (command) {
   case 'start':
     start();
@@ -102,6 +117,9 @@ switch (command) {
     break;
   case 'logs':
     logs();
+    break;
+  case 'clear':
+    clear();
     break;
   default:
     showHelp();

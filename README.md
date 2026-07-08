@@ -62,6 +62,7 @@ ai-server stop      # 停止服务
 ai-server restart   # 重启服务
 ai-server status    # 查看状态
 ai-server logs      # 查看日志
+ai-server clear     # 停止并删除 pm2 中的服务
 ```
 
 ### 添加模型
