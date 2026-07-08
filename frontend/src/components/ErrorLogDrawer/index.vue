@@ -113,6 +113,11 @@ const getErrorTypeLabel = (errorType: string): string => {
 </script>
 
 <style scoped lang="less">
+:deep(.el-drawer__body) {
+  display: flex;
+  flex-direction: column;
+}
+
 .drawer-header {
   display: flex;
   align-items: center;
@@ -126,7 +131,7 @@ const getErrorTypeLabel = (errorType: string): string => {
 }
 
 .error-log-container {
-  height: calc(100vh - 160px);
+  flex: 1;
   overflow-y: auto;
   padding: 0;
 }
