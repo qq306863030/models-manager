@@ -15,19 +15,10 @@ import db from '../config/database';
 import {
   createModelProvider,
   convertToOpenAIChatMessages,
-  convertResponsesRequestToChatRequest,
-  convertChatCompletionToResponse,
-  convertOpenAIChatToAnthropicResponse,
   convertAnthropicRequestToCommon,
   toAnthropicError,
-  mapToolChoice,
-  mapStopSequences,
-  callOpenAIChat,
-  callAnthropic,
-  callOpenAIResponses,
-  callAnthropicMessages,
-  streamAnthropicMessages,
-  isModelLocked,
+  convertOpenAIChatToAnthropicResponse,
+  convertResponsesRequestToChatRequest,
   estimateMessagesTokens,
   estimateTextTokens,
   generateRandomString,
@@ -39,10 +30,16 @@ import {
   LOCK_DURATION_MS,
   REQUEST_TIMEOUT_MS,
   API_FORMAT,
+  isModelLocked,
+  callOpenAIChat,
+  callAnthropic,
+  callOpenAIResponses,
+  callAnthropicMessages,
+  streamAnthropicMessages,
   type ModelRow,
   type GenericMessage,
   type ChatCallParams,
-} from '../utils/format-convert';
+} from '../utils/model-provider';
 
 import {
   writeSSE,
@@ -58,7 +55,7 @@ import {
   buildResponsesResponse,
 } from '../utils/responses-stream';
 
-import { trackTokenUsage } from '../utils/tokenTracker';
+import { trackTokenUsage, trackApiCall } from '../utils/tokenTracker';
 import { getUserApiKey } from '../config/database';
 import { errorBroadcaster } from '../utils/errorBroadcaster';
 import OpenAI from 'openai';
@@ -385,6 +382,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
     });
   }
+  trackApiCall(usedModel?.id);
 
   res.json(result);
 }
@@ -679,6 +677,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
       total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
     });
   }
+  trackApiCall(usedModel?.id);
 
   // 使用增强版 buildResponsesResponse 构建完整响应
   const responseResult = buildResponsesResponse(result as Record<string, unknown>, body);
@@ -911,6 +910,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
       total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
     });
   }
+  trackApiCall(usedModel?.id);
 
   res.json(result);
 }
@@ -1097,7 +1097,6 @@ userRouter.get('/v1/test', async (req: Request, res: Response) => {
       : '';
 
   console.log('[test] Requested model:', requestedModel);
-  console.log('[test] Available models:', available.map(m => ({ name: m.name, model_name: m.model_name, id: m.id, user_id: m.user_id, isDisable: m.isDisable })));
 
   const model = requestedModel
     ? available.find((m) => m.name === requestedModel || m.model_name === requestedModel)

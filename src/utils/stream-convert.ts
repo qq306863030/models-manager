@@ -16,8 +16,8 @@ import {
   REQUEST_TIMEOUT_MS,
   type AIProvider,
   type ChatCallParams,
-} from './format-convert';
-import { trackTokenUsage } from './tokenTracker';
+} from './model-provider';
+import { trackTokenUsage, trackApiCall } from './tokenTracker';
 import { errorBroadcaster } from './errorBroadcaster';
 
 /** 零宽字符 — 防止 Copilot "Response contained no choices" */
@@ -389,6 +389,7 @@ export async function processChatStream(
       };
       trackTokenUsage(options.modelId, estimatedUsage);
     }
+    trackApiCall(options?.modelId);
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -477,6 +478,7 @@ export async function processAnthropicStream(
         total_tokens: (options.promptTokens || 0) + estimatedOutputTokens,
       });
     }
+    trackApiCall(options?.modelId);
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -1151,6 +1153,7 @@ export async function streamChatAsAnthropicSSE(
             total_tokens: promptTokens + Math.ceil(textContent.length / 3),
           });
         }
+        trackApiCall(modelId);
 
         res.write('data: [DONE]\n\n');
         res.end();
@@ -1175,6 +1178,7 @@ export async function streamChatAsAnthropicSSE(
           completion_tokens: Math.ceil(textContent.length / 3),
           total_tokens: promptTokens + Math.ceil(textContent.length / 3),
         });
+        trackApiCall(modelId);
       }
       res.write('data: [DONE]\n\n');
       res.end();

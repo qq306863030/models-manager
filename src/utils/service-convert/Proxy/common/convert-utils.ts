@@ -796,6 +796,24 @@ export function anthropicRequestToResponsesRequest(
         if (type === 'text') {
           const contentType = role === 'assistant' ? 'output_text' : 'input_text';
           textParts.push({ type: contentType, text: block.text });
+        } else if (type === 'image') {
+          // Anthropic image block → Responses input_image
+          const source = block.source as Record<string, unknown> | undefined;
+          if (source?.type === 'base64') {
+            const mediaType: string = (source.media_type as string) || 'image/png';
+            const data: string = (source.data as string) || '';
+            textParts.push({
+              type: 'input_image',
+              image_url: `data:${mediaType};base64,${data}`,
+              detail: 'auto',
+            });
+          } else if (source?.type === 'url') {
+            textParts.push({
+              type: 'input_image',
+              image_url: source.url as string,
+              detail: 'auto',
+            });
+          }
         } else if (type === 'tool_use') {
           // 先刷新文本内容
           if (textParts.length > 0) {
@@ -1055,12 +1073,22 @@ export function responsesRequestToChatRequest(
           if (typeof msgContent === 'string') {
             messages.push({ role, content: msgContent });
           } else if (Array.isArray(msgContent)) {
-            // 提取文本部分
-            const textParts = msgContent
-              .filter((p: any) => p.type === 'input_text' || p.type === 'output_text' || p.type === 'text')
-              .map((p: any) => p.text || '')
-              .join('');
-            if (textParts) messages.push({ role, content: textParts });
+            const chatParts: Array<Record<string, unknown>> = [];
+            for (const p of msgContent as Array<Record<string, unknown>>) {
+              const pType = p.type as string;
+              if (pType === 'input_text' || pType === 'output_text' || pType === 'text') {
+                if (p.text) chatParts.push({ type: 'text', text: p.text });
+              } else if (pType === 'input_image') {
+                const imageUrl = (p.image_url as string) || '';
+                if (imageUrl) chatParts.push({ type: 'image_url', image_url: { url: imageUrl } });
+              }
+            }
+            if (chatParts.length === 0) break;
+            if (chatParts.length === 1 && chatParts[0].type === 'text') {
+              messages.push({ role, content: (chatParts[0] as any).text });
+            } else {
+              messages.push({ role, content: chatParts });
+            }
           }
           break;
         }

@@ -155,11 +155,21 @@ export function trackTokenUsage(
   const outToken = usage.completion_tokens ?? 0
   const totalToken = usage.total_tokens ?? inToken + outToken
 
-  // 不追踪无效数据
-  if (inToken === 0 && outToken === 0) return
-
   enqueue({ modelId, inToken, outToken, totalToken, count: 1 }).catch((err) => {
     console.error('[tokenTracker] Failed to track tokens:', err)
+  })
+}
+
+/**
+ * 仅追踪一次 API 调用次数（不依赖 token 数据）
+ * 在请求成功时调用，确保每成功一次都记录
+ * @param modelId 模型数据库 ID
+ */
+export function trackApiCall(modelId: number | undefined): void {
+  if (!modelId) return
+
+  enqueue({ modelId, inToken: 0, outToken: 0, totalToken: 0, count: 1 }).catch((err) => {
+    console.error('[tokenTracker] Failed to track call count:', err)
   })
 }
 

@@ -25,8 +25,8 @@
 
 import { Response } from 'express';
 import OpenAI from 'openai';
-import { generateRandomString, REQUEST_TIMEOUT_MS } from './format-convert';
-import { trackTokenUsage } from './tokenTracker';
+import { generateRandomString, REQUEST_TIMEOUT_MS } from './model-provider';
+import { trackTokenUsage, trackApiCall } from './tokenTracker';
 
 // ========== 类型定义 ==========
 
@@ -376,6 +376,7 @@ export async function streamChatAsResponses(
         total_tokens: (options.promptTokens || 0) + (state.text ? Math.ceil(state.text.length / 3) : 0),
       });
     }
+    trackApiCall(options?.modelId);
 
     // 6. 发出 response.completed
     writeSSEEvent(res, 'response.completed', {
