@@ -18,6 +18,7 @@ import type {
 import OpenAI from 'openai';
 import { getUserSettings } from '../config/database';
 import { stripThinkingTags } from './thinking';
+import * as ConvertUtils from '../utils/service-convert/Proxy/common/convert-utils';
 
 // ========== 类型定义 ==========
 
@@ -108,18 +109,12 @@ export const LOCK_DURATION_MS = (() => {
 
 /** 生成随机字符串 */
 export function generateRandomString(length = 12): string {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result;
+  return ConvertUtils.generateRandomString(length);
 }
 
 /** 估算文本的 token 数（约 3 字符/token） */
 export function estimateTextTokens(text: string): number {
-  if (!text) return 0;
-  return Math.max(1, Math.ceil(text.length / 3));
+  return ConvertUtils.estimateTokens(text);
 }
 
 /** 估算消息数组的 token 数 */
@@ -327,10 +322,12 @@ export function convertToOpenAIChatMessages(messages: OpenAIMessage[]): GenericM
 // ========== Anthropic ↔ OpenAI Tools 转换 ==========
 
 export function convertToAnthropicTools(tools: OpenAITool[]): Tool[] {
-  return tools.map((tool) => ({
-    name: tool.function.name,
-    description: tool.function.description || '',
-    input_schema: tool.function.parameters as Tool['input_schema'],
+  const cleaned = ConvertUtils.cleanTools(tools as unknown as Record<string, unknown>[], 'openai-chat');
+  if (!Array.isArray(cleaned)) return [];
+  return cleaned.map((t: any) => ({
+    name: t.function?.name || '',
+    description: t.function?.description || '',
+    input_schema: t.function?.parameters || { type: 'object', properties: {} },
   }));
 }
 
@@ -355,42 +352,10 @@ export function mapToolChoice(
   direction: 'to-anthropic' | 'to-openai',
 ): unknown {
   if (!toolChoice) return undefined;
-
   if (direction === 'to-anthropic') {
-    // OpenAI → Anthropic
-    if (typeof toolChoice === 'string') {
-      if (toolChoice === 'auto') return { type: 'auto' };
-      if (toolChoice === 'required' || toolChoice === 'any') return { type: 'any' };
-      if (toolChoice === 'none') return { type: 'none' };
-      return { type: 'auto' };
-    }
-    if (typeof toolChoice === 'object') {
-      const tc = toolChoice as Record<string, unknown>;
-      if (tc.type === 'function' && tc.function) {
-        const fn = tc.function as Record<string, unknown>;
-        return { type: 'tool', name: fn.name || '' };
-      }
-      // type: auto / required / none
-      const type = tc.type as string;
-      if (type === 'auto') return { type: 'auto' };
-      if (type === 'required') return { type: 'any' };
-      if (type === 'none') return { type: 'none' };
-      return { type: 'auto' };
-    }
-    return { type: 'auto' };
+    return ConvertUtils.mapToolChoiceToAnthropic(toolChoice);
   } else {
-    // Anthropic → OpenAI
-    if (typeof toolChoice === 'object') {
-      const tc = toolChoice as Record<string, unknown>;
-      const type = tc.type as string;
-      if (type === 'tool' && tc.name) {
-        return { type: 'function', function: { name: tc.name } };
-      }
-      if (type === 'any') return 'required';
-      if (type === 'auto') return 'auto';
-      if (type === 'none') return 'none';
-    }
-    return 'auto';
+    return ConvertUtils.mapToolChoiceToChat(toolChoice);
   }
 }
 
@@ -401,19 +366,10 @@ export function mapStopSequences(
   direction: 'to-anthropic' | 'to-openai',
 ): unknown {
   if (!stop) return undefined;
-
   if (direction === 'to-anthropic') {
-    // OpenAI stop → Anthropic stop_sequences
-    if (Array.isArray(stop)) return stop;
-    if (typeof stop === 'string') return [stop];
-    return undefined;
+    return ConvertUtils.mapStopSequencesToAnthropic(stop);
   } else {
-    // Anthropic stop_sequences → OpenAI stop
-    if (Array.isArray(stop)) {
-      if (stop.length === 1) return stop[0];
-      return stop;
-    }
-    return stop;
+    return ConvertUtils.mapStopSequencesToOpenAI(stop);
   }
 }
 
@@ -471,211 +427,12 @@ export function convertAnthropicToChatCompletion(
 
 // ========== Responses API ↔ Chat 请求转换 ==========
 
-function convertResponsesContentToChatContent(content: unknown): string | Array<Record<string, unknown>> {
-  if (typeof content === 'string') return content;
-
-  if (!Array.isArray(content)) {
-    if (content && typeof content === 'object') {
-      const obj = content as Record<string, unknown>;
-      return (obj.text || obj.output_text || obj.input_text || JSON.stringify(content)) as string;
-    }
-    return String(content ?? '');
-  }
-
-  const parts = content
-    .map((item) => {
-      if (typeof item === 'string') return { type: 'text', text: item };
-
-      if (!item || typeof item !== 'object') return { type: 'text', text: String(item ?? '') };
-
-      const obj = item as Record<string, unknown>;
-      if (obj.type === 'input_text' || obj.type === 'output_text' || obj.type === 'text') {
-        return { type: 'text', text: (obj.text as string) || '' };
-      }
-      if (obj.type === 'input_image' && obj.image_url) {
-        return {
-          type: 'image_url',
-          image_url: { url: ((obj.image_url as any).url || obj.image_url) as string },
-        };
-      }
-      return {
-        type: 'text',
-        text: (obj.text as string) || (obj.output_text as string) || (obj.input_text as string) || JSON.stringify(item),
-      };
-    })
-    .filter((item) => (item as any).type !== 'text' || (item as any).text !== '');
-
-  if (parts.length === 1 && (parts[0] as any).type === 'text') {
-    return (parts[0] as any).text;
-  }
-  return parts;
-}
-
-function convertResponsesInputToChatMessages(body: Record<string, unknown>): Array<Record<string, unknown>> {
-  const messages: Array<Record<string, unknown>> = [];
-
-  if (typeof body.instructions === 'string' && body.instructions.trim() !== '') {
-    messages.push({ role: 'system', content: body.instructions });
-  }
-
-  const input = body.input || body.messages || [];
-
-  if (typeof input === 'string') {
-    messages.push({ role: 'user', content: input });
-    return messages;
-  }
-
-  if (!Array.isArray(input)) {
-    messages.push({ role: 'user', content: String(input ?? '') });
-    return messages;
-  }
-
-  for (const item of input) {
-    if (typeof item === 'string') {
-      messages.push({ role: 'user', content: item });
-      continue;
-    }
-
-    if (!item || typeof item !== 'object') continue;
-
-    const obj = item as Record<string, unknown>;
-
-    if (obj.type === 'function_call_output') {
-      messages.push({
-        role: 'tool',
-        tool_call_id: (obj.call_id || obj.id || 'call_0') as string,
-        content:
-          typeof obj.output === 'string'
-            ? (obj.output as string)
-            : JSON.stringify(obj.output ?? ''),
-      });
-      continue;
-    }
-
-    if (obj.type === 'function_call') {
-      messages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: [
-          {
-            id: (obj.call_id || obj.id || `call_${generateRandomString(8)}`) as string,
-            type: 'function',
-            function: {
-              name: obj.name as string,
-              arguments:
-                typeof obj.arguments === 'string'
-                  ? (obj.arguments as string)
-                  : JSON.stringify(obj.arguments || {}),
-            },
-          },
-        ],
-      });
-      continue;
-    }
-
-    const role = obj.role === 'developer' ? 'system' : ((obj.role as string) || 'user');
-    messages.push({
-      role,
-      content: convertResponsesContentToChatContent(
-        obj.content ?? obj.text ?? obj.output ?? '',
-      ),
-    });
-  }
-
-  return messages;
-}
-
-function convertResponsesToolsToChatTools(tools: unknown): unknown {
-  if (!Array.isArray(tools)) return undefined;
-
-  const converted = (tools as Array<Record<string, unknown>>)
-    .map((tool) => {
-      if (!tool || typeof tool !== 'object') return null;
-
-      if (tool.type === 'function') {
-        return {
-          type: 'function',
-          function: {
-            name: tool.name || (tool.function as any)?.name,
-            description: tool.description || (tool.function as any)?.description || '',
-            parameters:
-              tool.parameters || (tool.function as any)?.parameters || { type: 'object', properties: {} },
-          },
-        };
-      }
-      if (tool.type && tool.function) return tool;
-      return null;
-    })
-    .filter(Boolean);
-
-  return converted.length > 0 ? converted : undefined;
-}
-
 /**
  * Responses API 请求 → Chat Completion 请求
- *
- * 保留 previous_response_id、instructions、reasoning 等字段供后续使用。
+ * 已迁移至 ConvertUtils.responsesRequestToChatRequest
  */
 export function convertResponsesRequestToChatRequest(body: Record<string, unknown>): Record<string, unknown> {
-  const chatBody: Record<string, unknown> = { ...body };
-  const messages = convertResponsesInputToChatMessages(body);
-
-  // 将 instructions 作为 system message 添加到消息列表开头
-  if (typeof body.instructions === 'string' && body.instructions.trim() !== '') {
-    const userMsg = messages.find((m: any) => m.role === 'user');
-    if (!messages.some((m: any) => m.role === 'system')) {
-      messages.unshift({ role: 'system', content: body.instructions });
-    }
-  }
-
-  (chatBody as any).messages = messages;
-
-  // 保留 previous_response_id（透传给下游）
-  if (body.previous_response_id) {
-    (chatBody as any)._previous_response_id = body.previous_response_id;
-  }
-
-  // 处理 reasoning 字段 → 转为 thinking 参数
-  if (body.reasoning && typeof body.reasoning === 'object') {
-    const reasoning = body.reasoning as Record<string, unknown>;
-    if (reasoning.effort) {
-      // 映射 reasoning_effort
-      const effortMap: Record<string, string> = {
-        'none': 'none',
-        'low': 'low',
-        'medium': 'medium',
-        'high': 'high',
-        'xhigh': 'high',
-      };
-      (chatBody as any).reasoning_effort = effortMap[reasoning.effort as string] || reasoning.effort;
-    }
-  }
-
-  // 清理 Responses 特有字段
-  delete chatBody.input;
-  delete chatBody.instructions;
-  delete chatBody.previous_response_id;
-  delete chatBody.store;
-  delete chatBody.metadata;
-  delete chatBody.reasoning;
-  delete chatBody.truncation;
-  delete chatBody.text;
-  delete chatBody.parallel_tool_calls;
-
-  if (body.max_output_tokens !== undefined) {
-    chatBody.max_tokens = body.max_output_tokens;
-    delete chatBody.max_output_tokens;
-  }
-
-  const tools = convertResponsesToolsToChatTools(body.tools);
-  if (tools) {
-    (chatBody as any).tools = tools;
-  } else {
-    delete chatBody.tools;
-    delete chatBody.tool_choice;
-  }
-
-  return chatBody;
+  return ConvertUtils.responsesRequestToChatRequest(body);
 }
 
 /**
@@ -685,68 +442,7 @@ export function convertChatCompletionToResponse(
   chatCompletion: Record<string, unknown>,
   requestBody: Record<string, unknown>,
 ): Record<string, unknown> {
-  const choice = (chatCompletion.choices && (chatCompletion.choices as any)[0]) || {};
-  const message: any = choice.message || {};
-  const output: Array<Record<string, unknown>> = [];
-
-  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-    for (const toolCall of message.tool_calls) {
-      const tc = toolCall as any;
-      output.push({
-        id: tc.id || `fc_${generateRandomString(12)}`,
-        type: 'function_call',
-        status: 'completed',
-        call_id: tc.id || `call_${generateRandomString(12)}`,
-        name: tc.function?.name || '',
-        arguments: tc.function?.arguments || '{}',
-      });
-    }
-  }
-
-  if (typeof message.content === 'string' && message.content !== '') {
-    output.push({
-      id: `msg_${generateRandomString(12)}`,
-      type: 'message',
-      status: 'completed',
-      role: 'assistant',
-      content: [
-        {
-          type: 'output_text',
-          text: message.content,
-          annotations: [],
-        },
-      ],
-    });
-  }
-
-  return {
-    id: (chatCompletion.id as string) || `resp_${generateRandomString(12)}`,
-    object: 'response',
-    created_at: (chatCompletion.created as number) || Math.floor(Date.now() / 1000),
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    instructions: requestBody.instructions || null,
-    max_output_tokens: requestBody.max_output_tokens || requestBody.max_tokens || null,
-    model: (chatCompletion.model as string) || requestBody.model,
-    output,
-    output_text: output
-      .flatMap((item) => (item.content as Array<any>) || [])
-      .filter((item) => item.type === 'output_text')
-      .map((item) => item.text)
-      .join(''),
-    parallel_tool_calls: requestBody.parallel_tool_calls ?? true,
-    previous_response_id: requestBody.previous_response_id || null,
-    reasoning: requestBody.reasoning || null,
-    store: requestBody.store ?? false,
-    temperature: requestBody.temperature ?? null,
-    text: requestBody.text || { format: { type: 'text' } },
-    tool_choice: requestBody.tool_choice || 'auto',
-    tools: requestBody.tools || [],
-    top_p: requestBody.top_p ?? null,
-    truncation: requestBody.truncation || 'disabled',
-    usage: chatCompletion.usage || null,
-  };
+  return ConvertUtils.chatResponseToResponsesResponse(chatCompletion, requestBody);
 }
 
 // ========== Anthropic ↔ OpenAI Chat 响应转换 ==========
@@ -761,79 +457,13 @@ export function convertOpenAIChatToAnthropicResponse(
   chatCompletion: Record<string, unknown>,
   requestBody: Record<string, unknown>,
 ): Record<string, unknown> {
-  const choice = (chatCompletion.choices && (chatCompletion.choices as any)[0]) || {};
-  const message: any = choice.message || {};
-  const content: Array<Record<string, unknown>> = [];
-
-  // 文本内容 → text block
-  if (typeof message.content === 'string' && message.content) {
-    content.push({ type: 'text', text: message.content });
-  }
-
-  // tool_calls → tool_use blocks
-  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-    for (const tc of message.tool_calls) {
-      const toolCall = tc as any;
-      content.push({
-        type: 'tool_use',
-        id: toolCall.id || `tu_${generateRandomString(12)}`,
-        name: toolCall.function?.name || '',
-        input: (() => {
-          try {
-            return JSON.parse(toolCall.function?.arguments || '{}');
-          } catch {
-            return toolCall.function?.arguments || {};
-          }
-        })(),
-      });
-    }
-  }
-
-  // finish_reason → stop_reason
-  const finishReason = choice.finish_reason as string | undefined;
-  let stopReason: string | null = null;
-  switch (finishReason) {
-    case 'stop':
-      stopReason = 'end_turn';
-      break;
-    case 'length':
-      stopReason = 'max_tokens';
-      break;
-    case 'tool_calls':
-      stopReason = 'tool_use';
-      break;
-    case 'content_filter':
-      stopReason = 'content_filtered';
-      break;
-    default:
-      stopReason = finishReason || null;
-  }
-
-  // usage 映射
-  const chatUsage = chatCompletion.usage as
-    | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
-    | undefined;
-  const usage = chatUsage
-    ? {
-        input_tokens: chatUsage.prompt_tokens ?? 0,
-        output_tokens: chatUsage.completion_tokens ?? 0,
-      }
-    : undefined;
-
-  // 从请求中提取 anthropic_version
+  const result = ConvertUtils.chatResponseToAnthropicResponse(chatCompletion);
+  // 保留旧版的 requestBody.anthropic_version 字段
   const anthropicVersion = (requestBody.anthropic_version as string) || undefined;
-
-  return {
-    id: `msg_${generateRandomString(24)}`,
-    type: 'message',
-    role: 'assistant',
-    content,
-    model: (chatCompletion.model as string) || requestBody.model,
-    stop_reason: stopReason,
-    stop_sequence: null,
-    usage,
-    ...(anthropicVersion ? { anthropic_version: anthropicVersion } : {}),
-  };
+  if (anthropicVersion) {
+    (result as any).anthropic_version = anthropicVersion;
+  }
+  return result;
 }
 
 /**
