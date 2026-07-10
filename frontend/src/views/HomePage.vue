@@ -67,13 +67,17 @@
                 <el-icon><DocumentChecked /></el-icon>
                 查看接口
               </el-button>
+              <el-button size="small" class="header-btn" @click="mcpRecordDialogRef?.openDialog()">
+                <el-icon><Memo /></el-icon>
+                MCP记录
+              </el-button>
               <el-button size="small" class="header-btn" @click="openSettingsDialog">
                 <el-icon><Setting /></el-icon>
                 设置
               </el-button>
               <el-button size="small" class="header-btn" @click="errorLogVisible = true">
                 <el-icon><Notebook /></el-icon>
-                日志
+                错误日志
               </el-button>
             </div>
           </div>
@@ -234,6 +238,9 @@
 
     <!-- ========== 错误日志抽屉 ========== -->
     <ErrorLogDrawer v-model:visible="errorLogVisible" />
+
+    <!-- ========== MCP记录弹窗 ========== -->
+    <McpRecordDialog ref="mcpRecordDialogRef" />
   </div>
 </template>
 
@@ -241,7 +248,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -252,6 +259,7 @@ import AddModelDialog from '@/components/AddModelDialog/index.vue'
 import EditModelDialog from '@/components/EditModelDialog/index.vue'
 import ErrorLogDrawer from '@/components/ErrorLogDrawer/index.vue'
 import ImportConflictDialog from '@/components/ImportConflictDialog/index.vue'
+import McpRecordDialog from '@/components/McpRecordDialog/index.vue'
 import { useErrorLog } from '@/composables/useErrorLog'
 import { createModel, updateModel, type Model, type ModelForm } from '@/api/modelService'
 
@@ -315,6 +323,10 @@ const openEditDialog = (model: any) => {
 
 // 错误日志
 const errorLogVisible = ref(false)
+
+// MCP记录弹窗 ref
+const mcpRecordDialogRef = ref<InstanceType<typeof McpRecordDialog>>()
+
 const { connect: connectErrorLog, disconnect: disconnectErrorLog } = useErrorLog()
 
 const isIndeterminate = computed(() => {

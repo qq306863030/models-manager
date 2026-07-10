@@ -30,6 +30,7 @@ import {
   isModelLocked,
   estimateMessagesTokens,
   estimateTextTokens,
+  generateRandomString,
   buildOpenAIModel,
   parseModelCapabilities,
   getEffectiveContentLength,
@@ -48,10 +49,14 @@ import {
   writeSSEEvent,
   processChatStream,
   processAnthropicStream,
-  processOpenAIResponsesStream,
-  streamChatAsResponses,
   streamChatAsAnthropicSSE,
 } from '../utils/stream-convert';
+
+import {
+  streamChatAsResponses as streamChatAsResponsesV2,
+  processResponsesFetchStream,
+  buildResponsesResponse,
+} from '../utils/responses-stream';
 
 import { trackTokenUsage } from '../utils/tokenTracker';
 import { getUserApiKey } from '../config/database';
@@ -311,7 +316,11 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
 
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
-        if (res.headersSent) return;
+        if (res.headersSent) {
+          try { writeSSE(res, { error: { message: errMsg, type: 'server_error' } }); } catch { /* ignore */ }
+          res.end();
+          return;
+        }
         if (idx < ordered.length) continue;
 
         console.error(`[chat stream] All models failed. Last error:`, err);
@@ -380,6 +389,92 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   res.json(result);
 }
 
+// ========== previous_response_id 缓存 ==========
+
+/**
+ * 轻量内存缓存，用于 Responses API 的 previous_response_id 状态保持。
+ * key = "baseUrl|modelName"
+ * value = 最近的 response_id
+ *
+ * Codex 通过 previous_response_id 实现多轮对话上下文延续。
+ * 当上游不支持 previous_response_id 时，退化到全量发送上下文。
+ */
+const responseIdCache = new Map<string, string>();
+const RESPONSE_ID_CACHE_MAX = 100;
+
+function getCachedResponseId(baseUrl: string, modelName: string): string | undefined {
+  const key = `${baseUrl}|${modelName}`;
+  return responseIdCache.get(key);
+}
+
+function setCachedResponseId(baseUrl: string, modelName: string, responseId: string): void {
+  const key = `${baseUrl}|${modelName}`;
+  responseIdCache.set(key, responseId);
+  // LRU 简单淘汰
+  if (responseIdCache.size > RESPONSE_ID_CACHE_MAX) {
+    const firstKey = responseIdCache.keys().next().value;
+    if (firstKey) responseIdCache.delete(firstKey);
+  }
+}
+
+// ========== Responses API 辅助函数 ==========
+
+/**
+ * 将 Chat Completion 响应转换为单个流式 chunk
+ * 用于 Anthropic → Chat → Responses 转换路径
+ */
+function chatResultToChunk(
+  chatResult: Record<string, unknown>,
+  modelName: string,
+): OpenAI.Chat.ChatCompletionChunk {
+  const choice = ((chatResult.choices as Array<Record<string, unknown>>) || [{}])[0];
+  const message = (choice.message || {}) as Record<string, unknown>;
+
+  return {
+    id: (chatResult.id as string) || `chatcmpl-${generateRandomString(12)}`,
+    object: 'chat.completion.chunk',
+    created: (chatResult.created as number) || Math.floor(Date.now() / 1000),
+    model: modelName,
+    choices: [{
+      index: 0,
+      delta: {
+        role: 'assistant',
+        content: (message.content as string) || null,
+        tool_calls: (message.tool_calls as Array<Record<string, unknown>>)?.map((tc, i) => ({
+          index: i,
+          id: tc.id as string,
+          type: 'function' as const,
+          function: {
+            name: ((tc.function as Record<string, unknown>)?.name) as string,
+            arguments: ((tc.function as Record<string, unknown>)?.arguments) as string,
+          },
+        })),
+      },
+      finish_reason: (choice.finish_reason as string) || 'stop',
+    }],
+    usage: chatResult.usage as OpenAI.CompletionUsage | undefined,
+  } as unknown as OpenAI.Chat.ChatCompletionChunk;
+}
+
+/**
+ * 从单个 chunk 创建 AsyncIterable 流
+ * 用于将非流式响应包装为流式格式
+ */
+function createSingleChunkStream<T>(chunk: T): AsyncIterable<T> {
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<T> {
+      let emitted = false;
+      return {
+        next: async (): Promise<IteratorResult<T>> => {
+          if (emitted) return { done: true, value: undefined as any };
+          emitted = true;
+          return { done: false, value: chunk };
+        },
+      };
+    },
+  };
+}
+
 // ========== 统一处理函数：Responses API ==========
 
 async function handleResponses(req: Request, res: Response, userId?: number): Promise<void> {
@@ -387,7 +482,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream === true;
 
-  // 转换 Responses 请求为 Chat 请求
+  // 转换 Responses 请求为 Chat 请求（用于 Chat/Anthropic 路径）
   const chatBody = convertResponsesRequestToChatRequest({
     ...body,
     model: requestModelName,
@@ -399,9 +494,6 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
 
   const params = buildChatParams(chatBody);
   const promptTokens = estimateMessagesTokens(params.messages);
-  const tools = chatBody.tools as
-    | Array<{ function: { name: string; description?: string; parameters: Record<string, unknown> } }>
-    | undefined;
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
@@ -419,20 +511,51 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
     while (idx < ordered.length) {
       const model = ordered[idx++];
       const provider = createModelProvider(model);
+      const baseURL = model.url.replace(/\/$/, '');
 
       try {
         if (provider.type === 'anthropic') {
-          await processAnthropicStream(
-            provider,
-            { ...params, maxOutputTokens: params.maxTokens },
-            res,
-            { modelId: model.id, promptTokens },
-          );
+          // Anthropic 非流式调用 → 转为 Chat Completion 格式 → 包装为单 chunk 流
+          const chatResult = await callAnthropic(provider, {
+            ...params,
+            system: (body.instructions as string) || params.system,
+            maxOutputTokens: params.maxTokens,
+          });
+          const singleChunk = chatResultToChunk(chatResult, provider.modelName);
+          const singleItemStream = createSingleChunkStream(singleChunk);
+
+          await streamChatAsResponsesV2(singleItemStream, res, provider.modelName, {
+            modelId: model.id,
+            promptTokens,
+          });
         } else if (provider.type === 'openai-responses') {
-          await processOpenAIResponsesStream(
-            provider,
-            { ...params, maxOutputTokens: params.maxTokens },
-            body,
+          // 原生 Responses API → 使用 HTTP fetch 直接代理
+          // 避免 OpenAI SDK 与非标准 Responses 端点的兼容问题
+          const prevResponseId = body.previous_response_id
+            ? (body.previous_response_id as string)
+            : getCachedResponseId(baseURL, provider.modelName);
+
+          const upstreamBody: Record<string, unknown> = {
+            model: provider.modelName,
+            input: (body as any).input || [],
+            max_output_tokens: params.maxTokens,
+            temperature: params.temperature,
+            top_p: params.topP,
+            stream: true,
+          };
+
+          // 透传 optional 字段
+          if (body.instructions) upstreamBody.instructions = body.instructions;
+          if (body.tools) upstreamBody.tools = body.tools;
+          if (body.tool_choice) upstreamBody.tool_choice = body.tool_choice;
+          if (body.reasoning) upstreamBody.reasoning = body.reasoning;
+          if (body.text) upstreamBody.text = body.text;
+          if (prevResponseId) upstreamBody.previous_response_id = prevResponseId;
+
+          await processResponsesFetchStream(
+            `${baseURL}/responses`,
+            model.api_key,
+            upstreamBody,
             res,
             { modelId: model.id },
           );
@@ -445,16 +568,18 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
               messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
               max_tokens: params.maxTokens,
               temperature: params.temperature,
-              tools: tools
-                ? tools.map((t) => ({ type: 'function' as const, function: t.function }))
+              top_p: params.topP,
+              tools: params.tools
+                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
                 : undefined,
+              tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
               stream: true,
               stream_options: { include_usage: true },
             } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
             { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
           );
 
-          await streamChatAsResponses(stream, res, provider.modelName, {
+          await streamChatAsResponsesV2(stream, res, provider.modelName, {
             modelId: model.id,
             promptTokens,
           });
@@ -480,7 +605,11 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
 
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
-        if (res.headersSent) return;
+        if (res.headersSent) {
+          try { writeSSE(res, { error: { message: errMsg, type: 'server_error' } }); } catch { /* ignore */ }
+          res.end();
+          return;
+        }
         if (idx < ordered.length) continue;
 
         console.error(`[responses stream] All models failed. Last error:`, err);
@@ -495,11 +624,13 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
 
   // 非流式
   let result: any = null;
+  let usedModel: ModelRow | undefined;
   try {
     result = await tryModelsSequentially(
       requestModelName,
       async (model: ModelRow) => {
         const provider = createModelProvider(model);
+        usedModel = model;
 
         if (provider.type === 'anthropic') {
           return callAnthropic(provider, {
@@ -539,15 +670,18 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
     return;
   }
 
-  const usedModel =
-    getAllModels(userId).find((m) => m.name === requestModelName) ??
-    getAllModels(userId).filter((m) => !m.isDisable)[0];
-
   if (result.usage) {
     trackTokenUsage(usedModel?.id, result.usage as any);
+  } else if (usedModel) {
+    trackTokenUsage(usedModel.id, {
+      prompt_tokens: promptTokens,
+      completion_tokens: estimateTextTokens(JSON.stringify(result)),
+      total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
+    });
   }
 
-  const responseResult = convertChatCompletionToResponse(result as Record<string, unknown>, body);
+  // 使用增强版 buildResponsesResponse 构建完整响应
+  const responseResult = buildResponsesResponse(result as Record<string, unknown>, body);
   res.json(responseResult);
 }
 
@@ -688,7 +822,11 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
 
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
 
-        if (res.headersSent) return;
+        if (res.headersSent) {
+          try { writeSSEEvent(res, 'error', { type: 'error', error: { type: 'overloaded_error', message: 'Stream error' } }); } catch { /* ignore */ }
+          res.end();
+          return;
+        }
         if (idx < ordered.length) continue;
 
         console.error(`[anthropic messages stream] All models failed. Last error:`, err);

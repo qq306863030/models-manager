@@ -16,6 +16,7 @@ declare module 'vue' {
     ErrorLogDrawer: typeof import('./src/components/ErrorLogDrawer/index.vue')['default']
     ImportConflictDialog: typeof import('./src/components/ImportConflictDialog/index.vue')['default']
     LoginDialog: typeof import('./src/components/LoginDialog/index.vue')['default']
+    McpRecordDialog: typeof import('./src/components/McpRecordDialog/index.vue')['default']
     ModelCard: typeof import('./src/components/ModelCard/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

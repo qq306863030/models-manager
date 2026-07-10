@@ -174,4 +174,32 @@ try {
   // 列可能已存在，忽略错误
 }
 
+// ========== MCP 记录表 ==========
+db.exec(`
+  CREATE TABLE IF NOT EXISTS mcp_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    content TEXT NOT NULL DEFAULT '{}',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`);
+
+// 获取用户的 MCP 记录
+export function getMcpRecord(userId: number): { content: string } | null {
+  const row = db.prepare('SELECT content FROM mcp_records WHERE user_id = ?').get(userId) as { content: string } | undefined;
+  return row || null;
+}
+
+// 插入或更新用户的 MCP 记录
+export function upsertMcpRecord(userId: number, content: string): void {
+  const existing = db.prepare('SELECT id FROM mcp_records WHERE user_id = ?').get(userId);
+  if (existing) {
+    db.prepare('UPDATE mcp_records SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(content, userId);
+  } else {
+    db.prepare('INSERT INTO mcp_records (user_id, content) VALUES (?, ?)').run(userId, content);
+  }
+}
+
 export default db;

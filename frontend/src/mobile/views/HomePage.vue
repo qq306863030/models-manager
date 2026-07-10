@@ -167,7 +167,7 @@ const proxyEndpoints = [
   { method: 'GET',  path: '/api/tags',               desc: '获取模型列表（Ollama 兼容）' },
   { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
   { method: 'GET',  path: '/api/version',            desc: '版本信息' },
-  { method: 'GET',  path: '/v1/test',                desc: '测试接口' },
+  { method: 'GET',  path: '/v1/test',                desc: '测试接口(支持model和content参数)' },
 ];
 
 // 剪贴板复制

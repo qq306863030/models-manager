@@ -20,6 +20,9 @@ import {
 import { trackTokenUsage } from './tokenTracker';
 import { errorBroadcaster } from './errorBroadcaster';
 
+/** 零宽字符 — 防止 Copilot "Response contained no choices" */
+const INVISIBLE_SENTINEL = '\u2060';
+
 // ========== SSE 写入辅助 ==========
 
 /** 写入标准 SSE data 行 */
@@ -350,6 +353,18 @@ export async function processChatStream(
       }
     }
 
+    // 无可见输出时注入零宽字符，防止 Copilot 报 "no choices"
+    if (!textContent) {
+      writeSSE(res, {
+        id: completionId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: modelName,
+        choices: [{ index: 0, delta: { content: INVISIBLE_SENTINEL }, finish_reason: null }],
+      });
+      textContent = INVISIBLE_SENTINEL;
+    }
+
     // 发送 usage
     if (usage) {
       writeSSE(res, {
@@ -382,7 +397,11 @@ export async function processChatStream(
     const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'chat_stream_error';
     console.error('[chat stream] fatal:', err);
     errorBroadcaster.emitError(options?.modelId ?? 0, modelName, errorType, errMsg);
-    if (!res.writableEnded) res.end();
+    if (!res.writableEnded) {
+      // 流已开始则写入错误事件后关闭，否则直接 end
+      try { writeSSE(res, { error: { message: errMsg, type: errorType } }); } catch { /* ignore */ }
+      res.end();
+    }
   }
 }
 
@@ -431,6 +450,18 @@ export async function processAnthropicStream(
       }
     }
 
+    // 无可见输出时注入零宽字符，防止 Copilot 报 "no choices"
+    if (!converter.textContent) {
+      writeSSE(res, {
+        id: converter.getCompletionId(),
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: provider.modelName,
+        choices: [{ index: 0, delta: { content: INVISIBLE_SENTINEL }, finish_reason: null }],
+      });
+      converter.textContent = INVISIBLE_SENTINEL;
+    }
+
     // 记录 token 统计
     if (converter.usage && options?.modelId) {
       trackTokenUsage(options.modelId, {
@@ -454,7 +485,10 @@ export async function processAnthropicStream(
     const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'anthropic_stream_error';
     console.error('[anthropic stream] fatal:', err);
     errorBroadcaster.emitError(options?.modelId ?? 0, provider.modelName, errorType, errMsg);
-    if (!res.writableEnded) res.end();
+    if (!res.writableEnded) {
+      try { writeSSE(res, { error: { message: errMsg, type: errorType } }); } catch { /* ignore */ }
+      res.end();
+    }
   }
 }
 
@@ -1082,6 +1116,12 @@ export async function streamChatAsAnthropicSSE(
 
       // finish_reason → message_delta + content_block_stop + message_stop
       if (finishReason) {
+        // 无可见输出时注入零宽字符作为文本块
+        if (!textContent && textBlockIndex < 0) {
+          emitTextBlockDelta(INVISIBLE_SENTINEL);
+          textContent = INVISIBLE_SENTINEL;
+        }
+
         const mappedStopReason = (() => {
           switch (finishReason) {
             case 'stop': return 'end_turn';
@@ -1121,6 +1161,11 @@ export async function streamChatAsAnthropicSSE(
 
     // 流结束但未收到 finish_reason
     if (!completed) {
+      // 无可见输出时注入零宽字符
+      if (!textContent && textBlockIndex < 0) {
+        emitTextBlockDelta(INVISIBLE_SENTINEL);
+        textContent = INVISIBLE_SENTINEL;
+      }
       finishAllBlocks();
       emitMessageDelta('end_turn');
       emitMessageStop();
@@ -1136,6 +1181,9 @@ export async function streamChatAsAnthropicSSE(
     }
   } catch (err) {
     console.error('[chat→anthropic sse] fatal:', err);
-    if (!res.writableEnded) res.end();
+    if (!res.writableEnded) {
+      try { writeSSEEvent(res, 'error', { type: 'error', error: { type: 'server_error', message: (err as Error).message } }); } catch { /* ignore */ }
+      res.end();
+    }
   }
 }

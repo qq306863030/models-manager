@@ -613,11 +613,45 @@ function convertResponsesToolsToChatTools(tools: unknown): unknown {
 
 /**
  * Responses API 请求 → Chat Completion 请求
+ *
+ * 保留 previous_response_id、instructions、reasoning 等字段供后续使用。
  */
 export function convertResponsesRequestToChatRequest(body: Record<string, unknown>): Record<string, unknown> {
   const chatBody: Record<string, unknown> = { ...body };
-  (chatBody as any).messages = convertResponsesInputToChatMessages(body);
+  const messages = convertResponsesInputToChatMessages(body);
 
+  // 将 instructions 作为 system message 添加到消息列表开头
+  if (typeof body.instructions === 'string' && body.instructions.trim() !== '') {
+    const userMsg = messages.find((m: any) => m.role === 'user');
+    if (!messages.some((m: any) => m.role === 'system')) {
+      messages.unshift({ role: 'system', content: body.instructions });
+    }
+  }
+
+  (chatBody as any).messages = messages;
+
+  // 保留 previous_response_id（透传给下游）
+  if (body.previous_response_id) {
+    (chatBody as any)._previous_response_id = body.previous_response_id;
+  }
+
+  // 处理 reasoning 字段 → 转为 thinking 参数
+  if (body.reasoning && typeof body.reasoning === 'object') {
+    const reasoning = body.reasoning as Record<string, unknown>;
+    if (reasoning.effort) {
+      // 映射 reasoning_effort
+      const effortMap: Record<string, string> = {
+        'none': 'none',
+        'low': 'low',
+        'medium': 'medium',
+        'high': 'high',
+        'xhigh': 'high',
+      };
+      (chatBody as any).reasoning_effort = effortMap[reasoning.effort as string] || reasoning.effort;
+    }
+  }
+
+  // 清理 Responses 特有字段
   delete chatBody.input;
   delete chatBody.instructions;
   delete chatBody.previous_response_id;
@@ -626,6 +660,7 @@ export function convertResponsesRequestToChatRequest(body: Record<string, unknow
   delete chatBody.reasoning;
   delete chatBody.truncation;
   delete chatBody.text;
+  delete chatBody.parallel_tool_calls;
 
   if (body.max_output_tokens !== undefined) {
     chatBody.max_tokens = body.max_output_tokens;
@@ -638,7 +673,6 @@ export function convertResponsesRequestToChatRequest(body: Record<string, unknow
   } else {
     delete chatBody.tools;
     delete chatBody.tool_choice;
-    delete chatBody.parallel_tool_calls;
   }
 
   return chatBody;
@@ -1037,25 +1071,7 @@ export async function callAnthropic(
   provider: AIProvider,
   params: ChatCallParams,
 ): Promise<Record<string, unknown>> {
-  const client = provider.client as Anthropic;
-  const anthropicParams = convertToAnthropicMessages(
-    params.messages as unknown as OpenAIMessage[],
-    params.system,
-  );
-
-  const response = await client.messages.create(
-    {
-      model: provider.modelName,
-      max_tokens: params.maxOutputTokens,
-      messages: anthropicParams.messages,
-      system: anthropicParams.system,
-      temperature: params.temperature,
-      tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
-      stream: false,
-    },
-    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-  );
-
+  const response = await streamAnthropicAndCollect(provider, params);
   return convertAnthropicToChatCompletion(response, provider.modelName);
 }
 
@@ -1173,20 +1189,32 @@ export async function callOpenAIResponses(
 }
 
 /**
- * 调用 Anthropic SDK 并返回原始 Anthropic Message 格式的响应
- * 用于 /v1/messages 端点，避免转换回 OpenAI Chat 格式再转回的损耗
+ * 调用 Anthropic SDK 并返回原始 Anthropic Message 格式的响应（内部流式）
+ * 用于 /v1/messages 端点，避免转换回 OpenAI Chat 格式再转回的损耗。
+ * Anthropic SDK 要求长时间请求必须走 streaming，所以内部始终流式并收集结果。
  */
 export async function callAnthropicMessages(
   provider: AIProvider,
   params: ChatCallParams,
 ): Promise<Record<string, unknown>> {
+  return streamAnthropicAndCollect(provider, params) as unknown as Record<string, unknown>;
+}
+
+/**
+ * 内部：调用 Anthropic Messages 流式 API 并收集完整结果
+ * 返回合成的 Anthropic Message 格式对象
+ */
+async function streamAnthropicAndCollect(
+  provider: AIProvider,
+  params: ChatCallParams,
+): Promise<any> {
   const client = provider.client as Anthropic;
   const anthropicParams = convertToAnthropicMessages(
     params.messages as unknown as OpenAIMessage[],
     params.system,
   );
 
-  const response = await client.messages.create(
+  const stream = await client.messages.stream(
     {
       model: provider.modelName,
       max_tokens: params.maxOutputTokens,
@@ -1194,12 +1222,86 @@ export async function callAnthropicMessages(
       system: anthropicParams.system,
       temperature: params.temperature,
       tools: params.tools ? convertToAnthropicTools(params.tools as unknown as OpenAITool[]) : undefined,
-      stream: false,
     },
     { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
   );
 
-  return response as unknown as Record<string, unknown>;
+  // 收集流式事件，构建完整 Message 对象
+  let messageId = '';
+  let modelName = provider.modelName;
+  const contentBlocks: Array<Record<string, unknown>> = [];
+  let stopReason: string | null = null;
+  let usage: { input_tokens: number; output_tokens: number } = { input_tokens: 0, output_tokens: 0 };
+
+  for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
+    const type = event.type as string;
+
+    if (type === 'message_start') {
+      const msg = (event as any).message;
+      if (msg?.id) messageId = msg.id;
+      if (msg?.model) modelName = msg.model;
+    }
+
+    if (type === 'content_block_start') {
+      const block = (event as any).content_block;
+      const entry: Record<string, unknown> = { type: block.type };
+      if (block.id) entry.id = block.id;
+      if (block.name) entry.name = block.name;
+      if (block.text) entry.text = block.text;
+      if (block.type === 'tool_use') entry._partial_json = '';
+      contentBlocks.push(entry);
+    }
+
+    if (type === 'content_block_delta') {
+      const delta = (event as any).delta;
+      const idx = (event as any).index as number;
+      const block = contentBlocks[idx];
+      if (!block) continue;
+
+      if (delta.type === 'text_delta' && delta.text) {
+        block.text = ((block.text as string) || '') + delta.text;
+      } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+        block._partial_json = ((block._partial_json as string) || '') + delta.partial_json;
+      } else if (delta.type === 'thinking_delta' && delta.thinking) {
+        block.thinking = ((block.thinking as string) || '') + delta.thinking;
+      }
+    }
+
+    if (type === 'content_block_stop') {
+      const idx = (event as any).index as number;
+      const block = contentBlocks[idx];
+      if (!block) continue;
+
+      // 解析 tool_use 的 JSON 参数
+      if (block.type === 'tool_use' && block._partial_json) {
+        try {
+          block.input = JSON.parse(block._partial_json as string);
+        } catch {
+          block.input = {};
+        }
+        delete block._partial_json;
+      }
+    }
+
+    if (type === 'message_delta') {
+      const delta = (event as any).delta;
+      if (delta?.stop_reason) stopReason = delta.stop_reason;
+      if ((event as any).usage) {
+        usage = (event as any).usage;
+      }
+    }
+  }
+
+  return {
+    id: messageId || `msg_${generateRandomString(24)}`,
+    type: 'message',
+    role: 'assistant',
+    content: contentBlocks,
+    model: modelName,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage,
+  };
 }
 
 /** Anthropic 流式创建，用于 /v1/messages 端点 */
@@ -1243,7 +1345,7 @@ export function getEffectiveMaxToken(): number {
   return settings.max_token > 0 ? settings.max_token : 0;
 }
 
-/** 构建 OpenAI 模型响应格式 */
+/** 构建 OpenAI 模型响应格式（含 Codex 所需元数据） */
 export function buildOpenAIModel(model: ModelRow) {
   const capabilities = model.capabilities
     ? JSON.parse(model.capabilities)
@@ -1257,6 +1359,9 @@ export function buildOpenAIModel(model: ModelRow) {
     name: model.name,
     content_length: effectiveContentLength,
     capabilities,
+    // Codex/Responses API 所需元数据
+    supports_responses_api: model.api_format === API_FORMAT.OPENAI_RESPONSES,
+    max_output_tokens: model.max_token || MAX_RESPONSE_TOKENS,
   };
 }
 

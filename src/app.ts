@@ -10,6 +10,7 @@ import tokenStatsRouter from './routes/tokenStats';
 import llmModelsRouter from './routes/llmModels';
 import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
+import mcpRecordsRouter from './routes/mcpRecords';
 import { errorBroadcaster } from './utils/errorBroadcaster';
 
 const app: Application = express();
@@ -44,6 +45,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/models', modelsRouter);
 app.use('/api/token-stats', tokenStatsRouter);
 app.use('/api/llm-models', llmModelsRouter);
+app.use('/api/mcp-records', mcpRecordsRouter);
 
 // 服务端配置（供前端读取）
 app.get('/api/config', (req: Request, res: Response) => {
