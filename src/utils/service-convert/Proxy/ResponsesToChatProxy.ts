@@ -79,6 +79,7 @@ export default class ResponsesToChatProxy extends BaseProxy<ResponsesProxyInput,
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') { this.callbacks?.onDone?.(); return; }
       this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     } finally { clearTimeout(timeoutId); }
   }
 

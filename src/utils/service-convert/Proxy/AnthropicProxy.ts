@@ -167,6 +167,7 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
         return;
       }
       this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     } finally {
       clearTimeout(timeoutId);
     }

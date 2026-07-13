@@ -140,7 +140,7 @@ export default class ChatCompletionsProxy extends BaseProxy<ChatCompletionsProxy
         return;
       }
       this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      return;
+      throw error;
     } finally {
       clearTimeout(timeoutId);
     }

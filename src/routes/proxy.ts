@@ -60,6 +60,9 @@ import { getUserApiKey } from '../config/database';
 import { errorBroadcaster } from '../utils/errorBroadcaster';
 import OpenAI from 'openai';
 
+// ===== Service-Convert Proxy 框架 =====
+import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type ProviderType } from '../utils/service-convert/express-bridge';
+
 const router = Router();
 
 // ========== 用户设置辅助 ==========
@@ -239,9 +242,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
-    res.status(503).json({
-      error: { message: '没有可用的模型', type: 'upstream_error', status: 503 },
-    });
+    res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
     return;
   }
 
@@ -251,143 +252,141 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   if (isStream) {
     if (res.headersSent) return;
 
+    const callbacks = createSSECallbacks('chat' as InputFormat, res);
     let idx = 0;
+
     while (idx < ordered.length) {
       const model = ordered[idx++];
-      const provider = createModelProvider(model);
+      const providerType = toProviderType(createModelProvider(model).type);
+      const baseURL = model.url.replace(/\/$/, '');
 
-      try {
-        if (provider.type === 'anthropic') {
+      const proxyBody: Record<string, unknown> = {
+        model: model.model_name,
+        messages: params.messages as unknown as Array<Record<string, unknown>>,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+        top_p: params.topP,
+        tools: params.tools as unknown as Array<Record<string, unknown>> | undefined,
+        tool_choice: params.toolChoice,
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+      if (params.system) proxyBody.system = params.system;
+
+      // Anthropic 原生 API 路径：调用 /v1/messages，不走 Chat hub
+      if (providerType === 'anthropic') {
+        try {
+          const provider = createModelProvider(model);
           await processAnthropicStream(
             provider,
-            { ...params, system: body.system as string, maxOutputTokens: params.maxTokens },
+            { ...params, system: params.system || '', maxOutputTokens: params.maxTokens },
             res,
             { modelId: model.id, promptTokens },
           );
-        } else {
-          const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create(
-            {
-              model: provider.modelName,
-              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-              max_tokens: params.maxTokens,
-              temperature: params.temperature,
-              top_p: params.topP,
-              tools: params.tools
-                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-                : undefined,
-              tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
-              stream: true,
-              stream_options: { include_usage: true },
-            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-          );
-
-          await processChatStream(stream, res, provider.modelName, {
-            modelId: model.id,
-            promptTokens,
-          });
+          trackApiCall(model.id);
+          return;
+        } catch (err) {
+          const error = err as Error & { status?: number; statusCode?: number };
+          const status = error.status || error.statusCode || 500;
+          const errMsg = (err as Error).message;
+          console.error(`[proxy] Anthropic model "${model.name}" failed (${status}): ${errMsg}`);
+          errorBroadcaster.emitError(model.id, model.name, 'anthropic_error', `[${status}] ${errMsg}`);
+          if (status === 400 && isMultimodalNotSupportedError(err)) {
+            callbacks.onError?.(err as Error);
+            callbacks.onDone?.();
+            return;
+          }
+          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          if (idx < ordered.length) continue;
+          callbacks.onError?.(new Error('所有可用模型均失败'));
+          callbacks.onDone?.();
+          return;
         }
+      }
+
+      // 非 Anthropic 路径：设置 SSE 头后走 Proxy 框架
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+      }
+
+      const proxy = pickProxy('chat' as InputFormat, providerType);
+      if (!proxy) {
+        callbacks.onError?.(new Error(`不支持的转换: chat→${providerType}`));
+        callbacks.onDone?.();
+        return;
+      }
+
+      try {
+        await executeProxy(proxy, {
+          baseUrl: baseURL,
+          apiKey: model.api_key,
+          providerLabel: `Chat→${providerType}`,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        }, proxyBody, callbacks);
+
+        trackApiCall(model.id);
         return;
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
         const errMsg = (err as Error).message;
-        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'chat_stream_error';
-        console.error(`[chat stream] Model "${model.name}" failed (${status}): ${errMsg}`, {
-          error: err,
-          model: { id: model.id, name: model.name, api_format: model.api_format },
-          requestModelName,
-        });
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'upstream_error';
+        console.error(`[proxy] Model "${model.name}" failed (${status}): ${errMsg}`);
         errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
 
-        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
         if (status === 400 && isMultimodalNotSupportedError(err)) {
-          if (!res.headersSent) {
-            res.status(400).json({
-              error: { message: errMsg, type: 'invalid_request_error', status: 400 },
-            });
-          }
+          callbacks.onError?.(err as Error);
+          callbacks.onDone?.();
           return;
         }
-
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
-
-        if (res.headersSent) {
-          try { writeSSE(res, { error: { message: errMsg, type: 'server_error' } }); } catch { /* ignore */ }
-          res.end();
-          return;
-        }
-        if (idx < ordered.length) continue;
-
-        console.error(`[chat stream] All models failed. Last error:`, err);
-        res.status(503).json({
-          error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 },
-        });
-        return;
       }
     }
-    return;
-  }
 
-  // 非流式
-  let usedModel: ModelRow | undefined;
-  let result: any = null;
-  try {
-    result = await tryModelsSequentially(
-      requestModelName,
-      async (model: ModelRow) => {
-        const provider = createModelProvider(model);
-        usedModel = model;
+    callbacks.onError?.(new Error('所有可用模型均失败'));
+    callbacks.onDone?.();
+  } else {
+    // 非流式
+    let result: any = null;
+    let usedModel: ModelRow | undefined;
+    try {
+      result = await tryModelsSequentially(
+        requestModelName,
+        async (model: ModelRow) => {
+          const provider = createModelProvider(model);
+          usedModel = model;
+          if (provider.type === 'anthropic') {
+            return callAnthropic(provider, { ...params, maxOutputTokens: params.maxTokens });
+          }
+          return callOpenAIChat(provider, { ...params, maxOutputTokens: params.maxTokens });
+        },
+        userId,
+      );
+    } catch (err) {
+      if (isMultimodalNotSupportedError(err)) {
+        const status = (err as any).status || (err as any).statusCode || 400;
+        res.status(status).json({ error: { message: (err as Error).message, type: 'invalid_request_error', status } });
+        return;
+      }
+      throw err;
+    }
 
-        if (provider.type === 'anthropic') {
-          return callAnthropic(provider, {
-            ...params,
-            maxOutputTokens: params.maxTokens,
-          });
-        } else {
-          return callOpenAIChat(provider, {
-            ...params,
-            maxOutputTokens: params.maxTokens,
-          });
-        }
-      },
-      userId,
-    );
-  } catch (err) {
-    // 不支持多模态等客户端错误：直接返回错误
-    if (isMultimodalNotSupportedError(err)) {
-      const status = (err as any).status || (err as any).statusCode || 400;
-      res.status(status).json({
-        error: { message: (err as Error).message, type: 'invalid_request_error', status },
-      });
+    if (!result) {
+      res.status(503).json({ error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 } });
       return;
     }
-    throw err;
+    if (result.usage) trackTokenUsage(usedModel?.id, result.usage as any);
+    else if (usedModel) {
+      const outText = JSON.stringify(result);
+      trackTokenUsage(usedModel.id, { prompt_tokens: promptTokens, completion_tokens: estimateTextTokens(outText), total_tokens: promptTokens + estimateTextTokens(outText) });
+    }
+    trackApiCall(usedModel?.id);
+    res.json(result);
   }
-
-  if (!result) {
-    res.status(503).json({
-      error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 },
-    });
-    return;
-  }
-
-  if (result.usage) {
-    trackTokenUsage(usedModel?.id, result.usage as any);
-  } else if (usedModel) {
-    trackTokenUsage(usedModel.id, {
-      prompt_tokens: promptTokens,
-      completion_tokens: estimateTextTokens(JSON.stringify(result)),
-      total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
-    });
-  }
-  trackApiCall(usedModel?.id);
-
-  res.json(result);
 }
-
-// ========== previous_response_id 缓存 ==========
 
 /**
  * 轻量内存缓存，用于 Responses API 的 previous_response_id 状态保持。
@@ -475,45 +474,78 @@ function createSingleChunkStream<T>(chunk: T): AsyncIterable<T> {
 
 // ========== 统一处理函数：Responses API ==========
 
+/** 转换 provider.type 到枚举 */
+function toProviderType(type: string): ProviderType {
+  if (type === 'anthropic') return 'anthropic';
+  if (type === 'openai-responses') return 'openai-responses';
+  return 'openai-chat';
+}
+
 async function handleResponses(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream === true;
 
-  // 转换 Responses 请求为 Chat 请求（用于 Chat/Anthropic 路径）
-  const chatBody = convertResponsesRequestToChatRequest({
-    ...body,
-    model: requestModelName,
-    max_tokens: Math.min(
-      (body.max_output_tokens as number) ?? (body.max_tokens as number) ?? MAX_RESPONSE_TOKENS,
-      MAX_RESPONSE_TOKENS,
-    ),
-  });
-
-  const params = buildChatParams(chatBody);
-  const promptTokens = estimateMessagesTokens(params.messages);
-
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
-    res.status(503).json({
-      error: { message: '没有可用的模型', type: 'upstream_error', status: 503 },
-    });
+    res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
     return;
   }
 
-  // 流式处理
   if (isStream) {
     if (res.headersSent) return;
 
+    const callbacks = createSSECallbacks('responses' as InputFormat, res);
     let idx = 0;
+
     while (idx < ordered.length) {
       const model = ordered[idx++];
-      const provider = createModelProvider(model);
+      const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
-      try {
-        if (provider.type === 'anthropic') {
-          // Anthropic 非流式调用 → 转为 Chat Completion 格式 → 包装为单 chunk 流
+      const proxyBody: Record<string, unknown> = {
+        ...body,
+        model: model.model_name,
+        stream: true,
+      };
+
+      // openai-chat/anthropic 路径：将 Responses input 转为 Chat messages
+      if ((providerType === 'openai-chat' || providerType === 'anthropic') && Array.isArray(body.input)) {
+
+        const chatBody = convertResponsesRequestToChatRequest({
+          ...body,
+          model: requestModelName,
+          max_tokens: Math.min(
+            (body.max_output_tokens as number) ?? (body.max_tokens as number) ?? MAX_RESPONSE_TOKENS,
+            MAX_RESPONSE_TOKENS,
+          ),
+        });
+        proxyBody.messages = chatBody.messages;
+        proxyBody.max_tokens = (chatBody as any).max_tokens || (chatBody as any).max_completion_tokens || MAX_RESPONSE_TOKENS;
+        if ((chatBody as any).system) proxyBody.system = (chatBody as any).system;
+        if (body.instructions) proxyBody.instructions = body.instructions;
+        delete proxyBody.input;
+        delete proxyBody.previous_response_id;
+        delete proxyBody.text;
+      }
+
+      // Anthropic 原生 API 路径
+      if (providerType === 'anthropic' && Array.isArray(body.input)) {
+
+        const chatBody = convertResponsesRequestToChatRequest({
+          ...body,
+          model: requestModelName,
+          max_tokens: Math.min(
+            (body.max_output_tokens as number) ?? (body.max_tokens as number) ?? MAX_RESPONSE_TOKENS,
+            MAX_RESPONSE_TOKENS,
+          ),
+        });
+
+        const params = buildChatParams(chatBody);
+        const promptTokens = estimateMessagesTokens(params.messages);
+
+        try {
+          const provider = createModelProvider(model);
           const chatResult = await callAnthropic(provider, {
             ...params,
             system: (body.instructions as string) || params.system,
@@ -526,162 +558,75 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
             modelId: model.id,
             promptTokens,
           });
-        } else if (provider.type === 'openai-responses') {
-          // 原生 Responses API → 使用 HTTP fetch 直接代理
-          // 避免 OpenAI SDK 与非标准 Responses 端点的兼容问题
-          const prevResponseId = body.previous_response_id
-            ? (body.previous_response_id as string)
-            : getCachedResponseId(baseURL, provider.modelName);
-
-          const upstreamBody: Record<string, unknown> = {
-            model: provider.modelName,
-            input: (body as any).input || [],
-            max_output_tokens: params.maxTokens,
-            temperature: params.temperature,
-            top_p: params.topP,
-            stream: true,
-          };
-
-          // 透传 optional 字段
-          if (body.instructions) upstreamBody.instructions = body.instructions;
-          if (body.tools) upstreamBody.tools = body.tools;
-          if (body.tool_choice) upstreamBody.tool_choice = body.tool_choice;
-          if (body.reasoning) upstreamBody.reasoning = body.reasoning;
-          if (body.text) upstreamBody.text = body.text;
-          if (prevResponseId) upstreamBody.previous_response_id = prevResponseId;
-
-          await processResponsesFetchStream(
-            `${baseURL}/responses`,
-            model.api_key,
-            upstreamBody,
-            res,
-            { modelId: model.id },
-          );
-        } else {
-          // openai-chat → Chat Completions API → 转换为 Responses SSE
-          const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create(
-            {
-              model: provider.modelName,
-              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-              max_tokens: params.maxTokens,
-              temperature: params.temperature,
-              top_p: params.topP,
-              tools: params.tools
-                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-                : undefined,
-              tool_choice: params.toolChoice as OpenAI.Chat.ChatCompletionToolChoiceOption | undefined,
-              stream: true,
-              stream_options: { include_usage: true },
-            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-          );
-
-          await streamChatAsResponsesV2(stream, res, provider.modelName, {
-            modelId: model.id,
-            promptTokens,
-          });
+          trackApiCall(model.id);
+          return;
+        } catch (err) {
+          const errName = (err as Error).name;
+          const errMsg = (err as Error).message;
+          console.error(`[proxy] Anthropic model "${model.name}" failed:`, { name: errName, message: errMsg, url: model.url, apiFormat: model.api_format, stack: (err as Error).stack?.split('\n').slice(0, 8).join('\n') });
+          errorBroadcaster.emitError(model.id, model.name, 'anthropic_error', errMsg);
+          if (/abort|terminated|timeout/i.test(errName) || /terminated|aborted|timeout/i.test(errMsg)) {
+            console.error(`[proxy] Timeout/terminated (not locking model "${model.name}")`);
+            if (idx < ordered.length) continue;
+            callbacks.onError?.(new Error('所有可用模型均失败'));
+            callbacks.onDone?.();
+            return;
+          }
+          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          if (idx < ordered.length) continue;
+          callbacks.onError?.(new Error('所有可用模型均失败'));
+          callbacks.onDone?.();
+          return;
         }
+      }
+
+      // 非 Anthropic 路径：设置 SSE 头后走 Proxy 框架
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+      }
+
+      const proxy = pickProxy('responses' as InputFormat, providerType);
+      if (!proxy) {
+        callbacks.onError?.(new Error(`不支持的转换: responses→${providerType}`));
+        callbacks.onDone?.();
+        return;
+      }
+
+      try {
+        await executeProxy(proxy, {
+          baseUrl: baseURL,
+          apiKey: model.api_key,
+          providerLabel: `Responses→${providerType}`,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        }, proxyBody, callbacks);
+
+        trackApiCall(model.id);
         return;
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
         const errMsg = (err as Error).message;
-        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'responses_stream_error';
-        console.error(`[responses stream] Model "${model.name}" failed (${status}): ${errMsg}`);
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'upstream_error';
+        console.error(`[proxy] Model "${model.name}" failed (${status}): ${errMsg}`);
         errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
 
-        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
         if (status === 400 && isMultimodalNotSupportedError(err)) {
-          if (!res.headersSent) {
-            res.status(400).json({
-              error: { message: errMsg, type: 'invalid_request_error', status: 400 },
-            });
-          }
+          callbacks.onError?.(err as Error);
+          callbacks.onDone?.();
           return;
         }
-
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
-
-        if (res.headersSent) {
-          try { writeSSE(res, { error: { message: errMsg, type: 'server_error' } }); } catch { /* ignore */ }
-          res.end();
-          return;
-        }
-        if (idx < ordered.length) continue;
-
-        console.error(`[responses stream] All models failed. Last error:`, err);
-        res.status(503).json({
-          error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 },
-        });
-        return;
       }
     }
-    return;
+
+    callbacks.onError?.(new Error('所有可用模型均失败'));
+    callbacks.onDone?.();
+  } else {
+    res.status(400).json({ error: { message: 'Responses API 仅支持流式模式', type: 'invalid_request' } });
   }
-
-  // 非流式
-  let result: any = null;
-  let usedModel: ModelRow | undefined;
-  try {
-    result = await tryModelsSequentially(
-      requestModelName,
-      async (model: ModelRow) => {
-        const provider = createModelProvider(model);
-        usedModel = model;
-
-        if (provider.type === 'anthropic') {
-          return callAnthropic(provider, {
-            ...params,
-            system: chatBody.system as string,
-            maxOutputTokens: params.maxTokens,
-          });
-        } else if (provider.type === 'openai-responses') {
-          return callOpenAIResponses(provider, {
-            ...params,
-            maxOutputTokens: params.maxTokens,
-          }, body);
-        } else {
-          return callOpenAIChat(provider, {
-            ...params,
-            maxOutputTokens: params.maxTokens,
-          });
-        }
-      },
-      userId,
-    );
-  } catch (err) {
-    if (isMultimodalNotSupportedError(err)) {
-      const status = (err as any).status || (err as any).statusCode || 400;
-      res.status(status).json({
-        error: { message: (err as Error).message, type: 'invalid_request_error', status },
-      });
-      return;
-    }
-    throw err;
-  }
-
-  if (!result) {
-    res.status(503).json({
-      error: { message: '所有模型均不可用', type: 'upstream_error', status: 503 },
-    });
-    return;
-  }
-
-  if (result.usage) {
-    trackTokenUsage(usedModel?.id, result.usage as any);
-  } else if (usedModel) {
-    trackTokenUsage(usedModel.id, {
-      prompt_tokens: promptTokens,
-      completion_tokens: estimateTextTokens(JSON.stringify(result)),
-      total_tokens: promptTokens + estimateTextTokens(JSON.stringify(result)),
-    });
-  }
-  trackApiCall(usedModel?.id);
-
-  // 使用增强版 buildResponsesResponse 构建完整响应
-  const responseResult = buildResponsesResponse(result as Record<string, unknown>, body);
-  res.json(responseResult);
 }
 
 // ========== 统一处理函数：Anthropic Messages API ==========
@@ -723,123 +668,70 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
   // 流式处理
   if (isStream) {
     if (res.headersSent) return;
-
-    // Anthropic SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
+    const callbacks = createSSECallbacks('anthropic' as InputFormat, res);
     let idx = 0;
+
     while (idx < ordered.length) {
       const model = ordered[idx++];
-      const provider = createModelProvider(model);
+      const providerType = toProviderType(createModelProvider(model).type);
+      const baseURL = model.url.replace(/\/$/, '');
+
+      const proxyBody: Record<string, unknown> = {
+        model: model.model_name,
+        messages: params.messages as unknown as Array<Record<string, unknown>>,
+        max_tokens: params.maxOutputTokens,
+        temperature: params.temperature,
+        top_p: params.topP,
+        tools: params.tools as unknown as Array<Record<string, unknown>> | undefined,
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+      if (params.system) proxyBody.system = params.system;
+      if (body.stop_sequences) proxyBody.stop_sequences = body.stop_sequences;
+      if (body.metadata) proxyBody.metadata = body.metadata;
+
+      const proxy = pickProxy('anthropic' as InputFormat, providerType);
+      if (!proxy) {
+        callbacks.onError?.(new Error(`不支持的转换: anthropic→${providerType}`));
+        callbacks.onDone?.();
+        return;
+      }
 
       try {
-        if (provider.type === 'anthropic') {
-          // 原生 Anthropic 流 — 直接转发原始 SSE 事件
-          const anthropicStream = await streamAnthropicMessages(provider, {
-            ...params,
-            maxOutputTokens: params.maxOutputTokens,
-          });
+        await executeProxy(proxy, {
+          baseUrl: baseURL,
+          apiKey: model.api_key,
+          providerLabel: `Anthropic→${providerType}`,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        }, proxyBody, callbacks);
 
-          let usage: { input_tokens?: number; output_tokens?: number } | null = null;
-
-          for await (const event of anthropicStream as unknown as AsyncIterable<Record<string, unknown>>) {
-            if (res.writableEnded) break;
-
-            const eventType = event.type as string;
-            const eventData = event as any;
-
-            // 捕获 usage
-            if (eventType === 'message_delta' && eventData.usage) {
-              usage = eventData.usage;
-            }
-
-            // 直接转发原始 Anthropic SSE 事件
-            writeSSEEvent(res, eventType, event);
-          }
-
-          // 记录 token 统计
-          if (usage && model.id) {
-            trackTokenUsage(model.id, {
-              prompt_tokens: usage.input_tokens ?? 0,
-              completion_tokens: usage.output_tokens ?? 0,
-              total_tokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
-            });
-          } else if (model.id) {
-            trackTokenUsage(model.id, {
-              prompt_tokens: promptTokens,
-              completion_tokens: 0,
-              total_tokens: promptTokens,
-            });
-          }
-
-          res.write('data: [DONE]\n\n');
-          res.end();
-        } else if (provider.type === 'openai-chat' || provider.type === 'openai-responses') {
-          // OpenAI Chat/Responses → Anthropic SSE 转换
-          const client = provider.client as OpenAI;
-          const stream = await client.chat.completions.create(
-            {
-              model: provider.modelName,
-              messages: params.messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[],
-              max_tokens: params.maxOutputTokens,
-              temperature: params.temperature,
-              top_p: params.topP,
-              tools: params.tools
-                ? params.tools.map((t) => ({ type: 'function' as const, function: t.function }))
-                : undefined,
-              stream: true,
-              stream_options: { include_usage: true },
-            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-            { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
-          );
-
-          await streamChatAsAnthropicSSE(stream, res, provider.modelName, promptTokens, model.id);
-        }
+        trackApiCall(model.id);
         return;
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
         const status = error.status || error.statusCode || 500;
         const errMsg = (err as Error).message;
-        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'anthropic_stream_error';
-        console.error(`[anthropic messages stream] Model "${model.name}" failed (${status}): ${errMsg}`);
+        const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'upstream_error';
+        console.error(`[proxy] Model "${model.name}" failed (${status}): ${errMsg}`);
         errorBroadcaster.emitError(model.id, model.name, errorType, `[${status}] ${errMsg}`);
 
-        // 不支持多模态等客户端错误：直接返回，不锁定模型、不故障转移
         if (status === 400 && isMultimodalNotSupportedError(err)) {
-          if (!res.headersSent) {
-            res.status(400).json(toAnthropicError(errMsg, 'invalid_request_error'));
-          } else {
-            writeSSEEvent(res, 'error', { type: 'error', error: { type: 'invalid_request_error', message: errMsg } });
-            res.end();
-          }
+          callbacks.onError?.(err as Error);
+          callbacks.onDone?.();
           return;
         }
-
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
-
-        if (res.headersSent) {
-          try { writeSSEEvent(res, 'error', { type: 'error', error: { type: 'overloaded_error', message: 'Stream error' } }); } catch { /* ignore */ }
-          res.end();
-          return;
-        }
-        if (idx < ordered.length) continue;
-
-        console.error(`[anthropic messages stream] All models failed. Last error:`, err);
-
-        // 尝试写入错误事件（headers 可能已发送）
-        if (!res.headersSent) {
-          res.status(503).json(toAnthropicError('所有模型均不可用', 'overloaded_error'));
-        } else {
-          writeSSEEvent(res, 'error', { type: 'error', error: { type: 'overloaded_error', message: '所有模型均不可用' } });
-          res.end();
-        }
-        return;
       }
     }
+
+    callbacks.onError?.(new Error('所有可用模型均失败'));
+    callbacks.onDone?.();
     return;
   }
 

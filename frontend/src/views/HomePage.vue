@@ -184,7 +184,7 @@
               style="flex: 1" />
             <el-button @click="generateApiKey">生成</el-button>
             <el-button v-if="customApiKey" @click="copyText(customApiKey)">复制</el-button>
-            <el-button @click="clearApiKey">清除</el-button>
+            <el-button @click="clearApiKey" style="margin-left:0">清除</el-button>
           </div>
         </el-form-item>
         <el-form-item label="说明" style="align-items: baseline;">

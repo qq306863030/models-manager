@@ -6,3 +6,5 @@ data/*.db
 .DS_Store
 nul
 package-lock.json
+
+test/

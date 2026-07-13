@@ -146,7 +146,7 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
         return;
       }
       this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      return;
+      throw error;
     } finally {
       clearTimeout(timeoutId);
     }

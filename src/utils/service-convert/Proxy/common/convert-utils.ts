@@ -519,20 +519,51 @@ export function anthropicRequestToChatRequest(
 
           case 'tool_result': {
             // tool_result → tool role message
+            // 关键：OpenAI 'tool' role 不支持图片字段（OmniRoute PR #2123）
+            // 图片必须提取到后续的 user 消息中，否则会被 JSON.stringify 成 base64 文本
             const resultContent = block.content;
             let text: string;
+            const imageParts: Array<Record<string, unknown>> = [];
+
             if (typeof resultContent === 'string') {
               text = resultContent;
+            } else if (Array.isArray(resultContent)) {
+              const textParts: string[] = [];
+              for (const c of resultContent as Array<Record<string, unknown>>) {
+                if (c.type === 'text' && c.text) {
+                  textParts.push(c.text as string);
+                } else if (c.type === 'image' && c.source) {
+                  const src = c.source as Record<string, unknown>;
+                  if (src.type === 'base64') {
+                    imageParts.push({
+                      type: 'image_url',
+                      image_url: { url: `data:${src.media_type};base64,${src.data}` },
+                    });
+                  } else if (src.type === 'url') {
+                    imageParts.push({
+                      type: 'image_url',
+                      image_url: { url: src.url },
+                    });
+                  }
+                }
+              }
+              text = textParts.join('\n') || (imageParts.length > 0 ? '[tool returned an image; see attached]' : JSON.stringify(resultContent));
             } else if (resultContent && typeof resultContent === 'object') {
               text = JSON.stringify(resultContent);
             } else {
               text = String(resultContent ?? '');
             }
+
             messages.push({
               role: 'tool',
               tool_call_id: block.tool_use_id,
               content: text,
             });
+
+            // 如果有提取出的图片，追加为后续 user 消息
+            if (imageParts.length > 0) {
+              messages.push({ role: 'user', content: imageParts });
+            }
             break;
           }
 
@@ -567,6 +598,25 @@ export function anthropicRequestToChatRequest(
           (msg as any).reasoning_content = reasoningParts.join('\n');
         }
         messages.push(msg);
+
+        // 自动填充缺失的 tool 响应（OmniRoute 的 fixMissingToolResponses 模式）
+        // 检查下一个消息是否包含 tool_result
+        const nextMsg = body.messages[body.messages.indexOf(msg) + 1];
+        if (toolCalls.length > 0) {
+          const nextHasToolResult = nextMsg?.role === 'user' &&
+            Array.isArray(nextMsg.content) &&
+            (nextMsg.content as Array<Record<string, unknown>>).some((b) => b.type === 'tool_result');
+          if (!nextHasToolResult) {
+            const toolCallIds = toolCalls.map((tc) => tc.id);
+            for (const id of toolCallIds) {
+              messages.push({
+                role: 'tool',
+                tool_call_id: id,
+                content: '',
+              });
+            }
+          }
+        }
       } else {
         // user 消息
         if (contentParts.length === 1 && contentParts[0].type === 'text') {
@@ -1096,10 +1146,28 @@ export function responsesRequestToChatRequest(
         default:
           // 其他类型尝试按 role 消息处理
           if (item.role) {
-            messages.push({
-              role: item.role === 'developer' ? 'system' : item.role,
-              content: item.content || item.text || '',
-            });
+            const role = item.role === 'developer' ? 'system' : item.role;
+            const rawContent = item.content ?? item.text ?? '';
+            if (typeof rawContent === 'string') {
+              messages.push({ role, content: rawContent });
+            } else if (Array.isArray(rawContent)) {
+              // 同样需要转换 input_text/input_image → text/image_url
+              const chatParts: Array<Record<string, unknown>> = [];
+              for (const p of rawContent as Array<Record<string, unknown>>) {
+                const pType = p.type as string;
+                if (pType === 'input_text' || pType === 'output_text' || pType === 'text') {
+                  if (p.text) chatParts.push({ type: 'text', text: p.text });
+                } else if (pType === 'input_image') {
+                  const imageUrl = (p.image_url as string) || '';
+                  if (imageUrl) chatParts.push({ type: 'image_url', image_url: { url: imageUrl } });
+                }
+              }
+              if (chatParts.length === 1 && chatParts[0].type === 'text') {
+                messages.push({ role, content: (chatParts[0] as any).text });
+              } else if (chatParts.length > 0) {
+                messages.push({ role, content: chatParts });
+              }
+            }
           }
           break;
       }
@@ -1167,6 +1235,166 @@ export function responsesRequestToChatRequest(
 
   return result;
 }
+// ========== Chat Completions 请求 → Responses API 请求 ==========
+
+/**
+ * OpenAI Chat Completions 请求 → Responses API 请求
+ *
+ * 参考 OmniRoute 的 `openaiToOpenAIResponsesRequest`
+ *
+ * 核心转换规则：
+ * - system/developer → instructions（顶层字符串）
+ * - user text → input_text 消息
+ * - user image_url → input_image 消息
+ * - assistant tool_calls → function_call items
+ * - tool messages → function_call_output items
+ * - max_tokens/max_completion_tokens → max_output_tokens
+ */
+export function chatRequestToResponsesRequest(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    model: (body.model as string) || '',
+    input: [],
+    stream: body.stream !== false,
+    store: false,
+  };
+
+  const input: Array<Record<string, unknown>> = result.input as Array<Record<string, unknown>>;
+  const messages = body.messages as Array<Record<string, unknown>> | undefined;
+  let hasSystemMessage = false;
+
+  if (Array.isArray(messages)) {
+    for (const msg of messages) {
+      const role = msg.role as string;
+      const rawContent = msg.content;
+
+      if (role === 'system' || role === 'developer') {
+        if (!hasSystemMessage) {
+          result.instructions = typeof rawContent === 'string' ? rawContent : '';
+          hasSystemMessage = true;
+        }
+        continue;
+      }
+
+      if (role === 'user') {
+        const contentParts: Array<Record<string, unknown>> = [];
+        if (typeof rawContent === 'string') {
+          contentParts.push({ type: 'input_text', text: rawContent });
+        } else if (Array.isArray(rawContent)) {
+          for (const part of rawContent as Array<Record<string, unknown>>) {
+            const pType = part.type as string;
+            if (pType === 'text') {
+              contentParts.push({ type: 'input_text', text: part.text });
+            } else if (pType === 'image_url') {
+              const url = ((part.image_url as Record<string, unknown>)?.url as string) || '';
+              if (url) {
+                contentParts.push({ type: 'input_image', image_url: url, detail: 'auto' });
+              }
+            }
+          }
+        }
+        if (contentParts.length > 0) {
+          input.push({ type: 'message', role: 'user', content: contentParts });
+        }
+        continue;
+      }
+
+      if (role === 'assistant') {
+        // 先处理文本内容
+        const textParts: Array<Record<string, unknown>> = [];
+        if (typeof rawContent === 'string') {
+          if (rawContent) textParts.push({ type: 'output_text', text: rawContent });
+        } else if (Array.isArray(rawContent)) {
+          for (const part of rawContent as Array<Record<string, unknown>>) {
+            if (part.type === 'text' && part.text) {
+              textParts.push({ type: 'output_text', text: part.text });
+            }
+          }
+        }
+        if (textParts.length > 0) {
+          input.push({ type: 'message', role: 'assistant', content: textParts, status: 'completed' });
+        }
+
+        // 处理 tool_calls → function_call items
+        const toolCalls = msg.tool_calls as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(toolCalls)) {
+          for (const tc of toolCalls) {
+            input.push({
+              type: 'function_call',
+              id: tc.id as string || `fc_${generateRandomString(12)}`,
+              call_id: tc.id as string || `call_${generateRandomString(12)}`,
+              name: ((tc.function as Record<string, unknown>)?.name as string) || '',
+              arguments: ((tc.function as Record<string, unknown>)?.arguments as string) || '{}',
+              status: 'completed',
+            });
+          }
+        }
+        continue;
+      }
+
+      if (role === 'tool') {
+        input.push({
+          type: 'function_call_output',
+          call_id: msg.tool_call_id as string || '',
+          output: typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent ?? ''),
+        });
+        continue;
+      }
+    }
+  }
+
+  // max_tokens / max_completion_tokens → max_output_tokens
+  if (body.max_completion_tokens !== undefined) {
+    result.max_output_tokens = body.max_completion_tokens;
+  } else if (body.max_tokens !== undefined) {
+    result.max_output_tokens = body.max_tokens;
+  }
+
+  // temperature / top_p
+  if (body.temperature !== undefined) result.temperature = body.temperature;
+  if (body.top_p !== undefined) result.top_p = body.top_p;
+
+  // tools
+  if (Array.isArray(body.tools)) {
+    const responsesTools = (body.tools as Array<Record<string, unknown>>)
+      .filter((t) => (t.type as string) === 'function')
+      .map((t) => {
+        const fn = t.function as Record<string, unknown> | undefined;
+        return {
+          type: 'function',
+          name: fn?.name as string || '',
+          description: fn?.description as string || '',
+          parameters: fn?.parameters as Record<string, unknown> || {},
+        };
+      });
+    if (responsesTools.length > 0) result.tools = responsesTools;
+  }
+
+  // tool_choice
+  if (body.tool_choice) {
+    if (typeof body.tool_choice === 'string') {
+      result.tool_choice = body.tool_choice === 'required' ? 'auto' : body.tool_choice;
+    } else {
+      const tc = body.tool_choice as Record<string, unknown>;
+      if (tc.type === 'function' && tc.function) {
+        const fn = tc.function as Record<string, unknown>;
+        result.tool_choice = { type: 'function', name: fn.name as string };
+      } else {
+        result.tool_choice = tc.type || 'auto';
+      }
+    }
+  }
+
+  // reasoning_effort → reasoning.effort
+  if (body.reasoning_effort) {
+    result.reasoning = { effort: body.reasoning_effort };
+  }
+
+  return result;
+}
+
+// ========== Chat Completions 响应 → Responses API 响应 ==========
 
 /**
  * Chat Completions 响应 → Responses API 响应
@@ -1276,8 +1504,35 @@ export function chatRequestToAnthropicRequest(
   const messages = body.messages as Array<Record<string, unknown>> | undefined;
 
   if (Array.isArray(messages)) {
+    // 第一步：预扫描 assistant 消息，收集所有 tool_call IDs
+    const assistantToolCallIds = new Set<string>();
     for (const msg of messages) {
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls as Array<Record<string, unknown>>) {
+          if (tc.id) assistantToolCallIds.add(tc.id as string);
+        }
+      }
+    }
+
+    // 第二步：处理消息，自动填充缺失的 tool 响应
+    const processedMessages: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
       const role = msg.role as string;
+
+      // developer → 当作 system 处理
+      if (role === 'developer') {
+        if (typeof msg.content === 'string') {
+          systemParts.push(msg.content);
+        } else if (Array.isArray(msg.content)) {
+          for (const part of msg.content as Array<Record<string, unknown>>) {
+            if (part.type === 'text' && part.text) {
+              systemParts.push(part.text as string);
+            }
+          }
+        }
+        continue;
+      }
 
       // system → 提取到顶层
       if (role === 'system') {
@@ -1292,6 +1547,32 @@ export function chatRequestToAnthropicRequest(
         }
         continue;
       }
+
+      processedMessages.push(msg);
+
+      // 自动填充缺失的 tool 响应（OmniRoute 的 fixMissingToolResponses 模式）
+      if (role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        const nextMsg = messages[i + 1];
+        const hasToolResult = nextMsg?.role === 'tool' || (
+          Array.isArray(nextMsg?.content) &&
+          (nextMsg.content as Array<Record<string, unknown>>).some((b) => b.type === 'tool_result')
+        );
+        if (!hasToolResult) {
+          const toolCallIds = (msg.tool_calls as Array<Record<string, unknown>>).map((tc) => tc.id);
+          for (const id of toolCallIds) {
+            processedMessages.push({
+              role: 'tool',
+              tool_call_id: id,
+              content: '',
+            });
+          }
+        }
+      }
+    }
+
+    // 第三步：转换为 Anthropic 格式
+    for (const msg of processedMessages) {
+      const role = msg.role as string;
 
       // tool → tool_result block
       if (role === 'tool') {
@@ -1381,9 +1662,29 @@ export function chatRequestToAnthropicRequest(
     }
   }
 
-  // system
+  // system（含 response_format JSON 指令注入，参考 OmniRoute）
+  if (body.response_format) {
+    const rf = body.response_format as Record<string, unknown>;
+    if (rf.type === 'json_object' || rf.type === 'json_schema') {
+      let jsonInstruction = 'You must respond with valid JSON.';
+      if (rf.type === 'json_schema' && rf.json_schema) {
+        const schema = rf.json_schema as Record<string, unknown>;
+        if (schema.name) jsonInstruction += `\nUse the schema: ${schema.name}`;
+        if (schema.schema) jsonInstruction += `\nSchema: ${JSON.stringify(schema.schema)}`;
+      } else if (rf.type === 'json_schema' && rf.schema) {
+        jsonInstruction += `\nSchema: ${JSON.stringify(rf.schema)}`;
+      }
+      systemParts.push(jsonInstruction);
+    }
+  }
+
   if (systemParts.length > 0) {
     result.system = systemParts.join('\n\n');
+  }
+
+  // 空消息保护（OmniRoute 模式）
+  if (anthropicMessages.length === 0) {
+    anthropicMessages.push({ role: 'user', content: 'Hello' });
   }
 
   result.messages = anthropicMessages;
@@ -1407,7 +1708,12 @@ export function chatRequestToAnthropicRequest(
           input_schema: fn?.parameters || { type: 'object', properties: {} },
         };
       });
-    if (anthropicTools.length > 0) result.tools = anthropicTools;
+    if (anthropicTools.length > 0) {
+      // 在最后一个工具上设置缓存断点（OmniRoute 模式）
+      const lastTool = anthropicTools[anthropicTools.length - 1] as Record<string, unknown>;
+      lastTool.cache_control = { type: 'ephemeral' };
+      result.tools = anthropicTools;
+    }
   }
 
   // tool_choice

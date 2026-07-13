@@ -1,10 +1,9 @@
 /**
  * ChatCompletionsToResponsesProxy — Chat Completions → Responses 转换代理
  *
- * 将 Chat Completions 格式的请求转换为 Responses 格式，
- * 通过 /chat/completions 端点调用上游，再将响应转换回 Responses 格式。
- *
- * 参考 cc-switch：chat_completion_to_response
+ * Hub-and-spoke 模式：所有格式转换经过 OpenAI Chat 作为中间格式。
+ * Chat 格式直接调用 /chat/completions，响应通过标准化回调输出。
+ * 响应格式转换在 transformResponse 中处理（非流式）。
  */
 
 import BaseProxy from './common/BaseProxy';
@@ -35,16 +34,17 @@ export default class ChatCompletionsToResponsesProxy extends BaseProxy<ChatCompl
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
       },
-      body: { ...input.body, stream: input.body.stream !== false, stream_options: { include_usage: true }, max_tokens: input.body.max_tokens || 4096 },
+      body: { ...input.body },
     };
   }
 
   protected transformRequest(input: ChatCompletionsProxyInput): Record<string, unknown> {
-    return { ...input.body };
+    // Chat 已经是中间格式，不需要转换
+    return { ...input.body, stream: input.body.stream !== false, stream_options: { include_usage: true }, max_tokens: input.body.max_tokens || 4096 };
   }
 
-  protected buildEndpoint(input: ChatCompletionsProxyInput): string {
-    return `${input.config.baseUrl}/chat/completions`;
+  protected buildEndpoint(_input: ChatCompletionsProxyInput): string {
+    return `${_input.config.baseUrl}/chat/completions`;
   }
 
   protected async proxy(input: ChatCompletionsProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
@@ -76,6 +76,7 @@ export default class ChatCompletionsToResponsesProxy extends BaseProxy<ChatCompl
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') { this.callbacks?.onDone?.(); return; }
       this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     } finally { clearTimeout(timeoutId); }
   }
 
