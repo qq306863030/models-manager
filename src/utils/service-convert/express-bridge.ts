@@ -339,6 +339,8 @@ export function createAnthropicSSECallbacks(res: Response): SSECallbacks {
   let msgId = `msg_${Date.now()}`;
   let contentBlockIndex = 0;
   let textBlockIndex = -1;
+  let thinkingBlockIndex = -1;
+  const toolBlockIndices = new Map<number, number>();
   let hasStarted = false;
 
   const emitEvent = (type: string, data: Record<string, unknown>): void => {
@@ -371,30 +373,35 @@ export function createAnthropicSSECallbacks(res: Response): SSECallbacks {
     },
     onThinking: (delta: string) => {
       ensureStarted();
-      const thinkingIdx = contentBlockIndex++;
-      emitEvent('content_block_start', {
-        index: thinkingIdx,
-        content_block: { type: 'thinking', thinking: '' },
-      });
+      if (thinkingBlockIndex < 0) {
+        thinkingBlockIndex = contentBlockIndex++;
+        emitEvent('content_block_start', {
+          index: thinkingBlockIndex,
+          content_block: { type: 'thinking', thinking: '' },
+        });
+      }
       emitEvent('content_block_delta', {
-        index: thinkingIdx,
+        index: thinkingBlockIndex,
         delta: { type: 'thinking_delta', thinking: delta },
       });
-      emitEvent('content_block_stop', { index: thinkingIdx });
     },
     onToolDelta: (delta: string, info) => {
       ensureStarted();
-      // 首次遇到 tool → 发送 content_block_start
-      // 之后遇到 arguments delta → content_block_delta
-      // 简化：直接发送 input_json_delta
       if (info.field === 'name') {
         const toolIdx = contentBlockIndex++;
+        toolBlockIndices.set(info.index, toolIdx);
         emitEvent('content_block_start', {
           index: toolIdx,
           content_block: { type: 'tool_use', id: info.id, name: info.name, input: {} },
         });
       } else if (info.field === 'arguments') {
-        // input_json_delta
+        const toolIdx = toolBlockIndices.get(info.index);
+        if (toolIdx !== undefined) {
+          emitEvent('content_block_delta', {
+            index: toolIdx,
+            delta: { type: 'input_json_delta', partial_json: delta },
+          });
+        }
       }
     },
     onToolCall: (toolCall: ToolCallInfo) => {
@@ -410,20 +417,37 @@ export function createAnthropicSSECallbacks(res: Response): SSECallbacks {
     },
     onUsage: (usage: TokenUsage) => {
       ensureStarted();
+      if (thinkingBlockIndex >= 0) {
+        emitEvent('content_block_stop', { index: thinkingBlockIndex });
+        thinkingBlockIndex = -1;
+      }
       if (textBlockIndex >= 0) {
         emitEvent('content_block_stop', { index: textBlockIndex });
+        textBlockIndex = -1;
       }
+      for (const [, idx] of toolBlockIndices) {
+        emitEvent('content_block_stop', { index: idx });
+      }
+      toolBlockIndices.clear();
       emitEvent('message_delta', {
         delta: { stop_reason: 'end_turn', stop_sequence: null },
         usage: { input_tokens: usage.prompt_tokens, output_tokens: usage.completion_tokens },
       });
-      textBlockIndex = -1;
     },
     onDone: () => {
       if (!hasStarted) ensureStarted();
+      if (thinkingBlockIndex >= 0) {
+        emitEvent('content_block_stop', { index: thinkingBlockIndex });
+        thinkingBlockIndex = -1;
+      }
       if (textBlockIndex >= 0) {
         emitEvent('content_block_stop', { index: textBlockIndex });
+        textBlockIndex = -1;
       }
+      for (const [, idx] of toolBlockIndices) {
+        emitEvent('content_block_stop', { index: idx });
+      }
+      toolBlockIndices.clear();
       emitEvent('message_delta', {
         delta: { stop_reason: 'end_turn', stop_sequence: null },
         usage: { input_tokens: 0, output_tokens: 0 },
@@ -435,7 +459,6 @@ export function createAnthropicSSECallbacks(res: Response): SSECallbacks {
     onError: (error: Error) => {
       console.error(`[express-bridge] AnthropicSSE error:`, error.message);
       console.error(`[express-bridge] AnthropicSSE details:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
-      // 向客户端发送错误事件
       try {
         writeSSEEvent(res, 'error', { code: 'stream_error', message: error.message });
         writeSSEEvent(res, 'message_stop', {});

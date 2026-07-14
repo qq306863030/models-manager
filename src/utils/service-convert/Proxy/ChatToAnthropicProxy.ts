@@ -1,15 +1,15 @@
 /**
  * ChatToAnthropicProxy — Chat Completions → Anthropic Messages 转换代理
  *
- * Hub-and-spoke 模式：所有格式转换经过 OpenAI Chat 作为中间格式。
- * Chat 格式直接调用 /chat/completions，响应通过标准化回调输出。
- * 响应格式转换在 transformResponse 中处理（非流式）。
+ * 将 OpenAI Chat Completions 格式的请求转换为 Anthropic Messages API 格式，
+ * 发送到上游 /v1/messages 端点，响应通过标准化回调输出。
  */
 
 import BaseProxy from './common/BaseProxy';
 import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
-import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
+import { chatRequestToAnthropicRequest } from './common/convert-utils';
 
 export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxyInput, void, Record<string, unknown>> {
   private callbacks?: SSECallbacks;
@@ -29,7 +29,7 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
     return {
       ...input,
       config: {
-        baseUrl: input.config.baseUrl.replace(/\/+$/, ''),
+        baseUrl: input.config.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, ''),
         apiKey: input.config.apiKey,
         providerLabel: input.config.providerLabel || 'ChatToAnthropic',
         timeoutMs: input.config.timeoutMs || 300_000,
@@ -40,12 +40,15 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
   }
 
   protected transformRequest(input: ChatCompletionsProxyInput): Record<string, unknown> {
-    // Chat 已经是中间格式，不需要转换
-    return { ...input.body, stream: input.body.stream !== false, stream_options: { include_usage: true }, max_tokens: input.body.max_tokens || 4096 };
+    // Chat → Anthropic 格式转换
+    const anthropicBody = chatRequestToAnthropicRequest(input.body);
+    // 强制流式
+    anthropicBody.stream = true;
+    return anthropicBody;
   }
 
   protected buildEndpoint(_input: ChatCompletionsProxyInput): string {
-    return `${_input.config.baseUrl}/chat/completions`;
+    return `${_input.config.baseUrl}/v1/messages`;
   }
 
   protected async proxy(input: ChatCompletionsProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
@@ -54,16 +57,93 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': input.config.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
         body: JSON.stringify(body),
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
-      (reader, cbs) => parseChatCompletionsStream(reader, cbs),
+      (reader, cbs) => this.parseAnthropicStream(reader, cbs),
       this.callbacks || {},
       { maxRetries: input.config.maxRetries ?? 2, providerLabel },
     );
+  }
+
+  /**
+   * Anthropic SSE 流解析 — 将上游 Anthropic SSE 事件通过 callbacks 输出
+   */
+  private async parseAnthropicStream(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    callbacks: SSECallbacks,
+  ): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('event:')) continue;
+        if (!trimmed.startsWith('data:')) continue;
+
+        const dataStr = trimmed.slice(5).trim();
+        try {
+          const event = JSON.parse(dataStr);
+
+          switch (event.type) {
+            case 'content_block_delta': {
+              const delta = event.delta;
+              if (delta?.type === 'text_delta' && delta.text) {
+                callbacks.onContent?.(delta.text);
+              }
+              if (delta?.type === 'thinking_delta' && delta.thinking) {
+                callbacks.onThinking?.(delta.thinking);
+              }
+              if (delta?.type === 'input_json_delta' && delta.partial_json) {
+                callbacks.onToolDelta?.(delta.partial_json, {
+                  id: event.content_block?.id || '',
+                  index: event.index || 0,
+                  name: event.content_block?.name || '',
+                  field: 'arguments',
+                });
+              }
+              break;
+            }
+            case 'content_block_start': {
+              if (event.content_block?.type === 'tool_use') {
+                callbacks.onToolDelta?.(event.content_block.name || '', {
+                  id: event.content_block.id || '',
+                  index: event.index || 0,
+                  name: event.content_block.name || '',
+                  field: 'name',
+                });
+              }
+              break;
+            }
+            case 'message_delta': {
+              if (event.usage) {
+                callbacks.onUsage?.({ prompt_tokens: 0, completion_tokens: event.usage.output_tokens || 0, total_tokens: event.usage.output_tokens || 0 });
+              }
+              break;
+            }
+            case 'message_stop':
+              callbacks.onDone?.();
+              return;
+          }
+        } catch { /* skip */ }
+      }
+    }
+    callbacks.onDone?.();
   }
 
   async execute(input: ChatCompletionsProxyInput, callbacks?: SSECallbacks): Promise<void> {

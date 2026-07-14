@@ -718,19 +718,14 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
       const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
-      const proxyBody: Record<string, unknown> = stripUndefined({
+      // anthropic 输入端统一使用原始 Anthropic 请求体
+      // 各 Proxy 负责格式转换（AnthropicProxy 直传，AnthropicToChatProxy 转 Chat,
+      // AnthropicToResponsesProxy 通过 Chat 中转）
+      const proxyBody: Record<string, unknown> = {
+        ...body,
         model: model.model_name,
-        messages: params.messages as unknown as Array<Record<string, unknown>>,
-        max_tokens: params.maxOutputTokens,
-        temperature: params.temperature,
-        top_p: params.topP,
-        tools: params.tools as unknown as Array<Record<string, unknown>> | undefined,
         stream: true,
-        stream_options: { include_usage: true },
-      });
-      if (params.system) proxyBody.system = params.system;
-      if (body.stop_sequences) proxyBody.stop_sequences = body.stop_sequences;
-      if (body.metadata) proxyBody.metadata = body.metadata;
+      };
 
       const proxy = pickProxy('anthropic' as InputFormat, providerType);
       if (!proxy) {
