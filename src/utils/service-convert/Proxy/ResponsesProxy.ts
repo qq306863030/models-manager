@@ -18,7 +18,8 @@ import type {
   ResponsesRequestBody,
   SSECallbacks,
 } from './common/types';
-import { parseResponsesStream } from './common/sse-utils';
+import { parseResponsesStream, streamWithRetry } from './common/sse-utils';
+import { fetchWithRetry } from './common/fetch-with-retry';
 
 // ========== 默认值 ==========
 
@@ -92,64 +93,66 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
     body: ResponsesRequestBody,
     endpoint: string,
   ): Promise<void> {
-    this.callbacks?.onConnectionStatus?.({ state: 'connected' });
+    const providerLabel = input.config.providerLabel || DEFAULT_PROVIDER_LABEL;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), input.config.timeoutMs || DEFAULT_TIMEOUT_MS);
+    // 先获取响应，检查是否为 SSE 流
+    const initialResponse = await fetchWithRetry(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${input.config.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
+      maxRetries: input.config.maxRetries ?? 2,
+      providerLabel,
+    });
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${input.config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage: string;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error?.message || errorJson.message || errorText;
-        } catch {
-          errorMessage = errorText;
-        }
-        throw new Error(`${input.config.providerLabel} API error (${response.status}): ${errorMessage}`);
-      }
-
-      // 检查 Content-Type，非 SSE 时走 JSON 兜底
-      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-      if (!contentType.includes('text/event-stream')) {
-        const responseJson = await response.json() as Record<string, unknown>;
-        this.emitJsonResponse(responseJson);
-        return;
-      }
-
-      if (!response.body) {
-        throw new Error('No response body received');
-      }
-
-      this.callbacks?.onConnectionStatus?.({ state: 'streaming' });
-
-      const reader = response.body.getReader();
+    if (!initialResponse.ok) {
+      const errorText = await initialResponse.text();
+      let errorMessage: string;
       try {
-        await parseResponsesStream(reader, this.callbacks || {});
-      } finally {
-        reader.releaseLock();
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+      } catch {
+        errorMessage = errorText;
       }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        this.callbacks?.onDone?.();
-        return;
-      }
-      this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+      throw new Error(`${providerLabel} API error (${initialResponse.status}): ${errorMessage}`);
     }
+
+    // 非 SSE 时走 JSON 兜底
+    const contentType = initialResponse.headers.get('content-type')?.toLowerCase() ?? '';
+    if (!contentType.includes('text/event-stream')) {
+      const responseJson = await initialResponse.json() as Record<string, unknown>;
+      this.emitJsonResponse(responseJson);
+      return;
+    }
+
+    // SSE 流 — 使用 streamWithRetry 支持流中断自动重试
+    let initialUsed = false;
+    await streamWithRetry(
+      async () => {
+        if (!initialUsed) {
+          initialUsed = true;
+          return initialResponse;
+        }
+        // 重试时重新请求
+        return fetchWithRetry(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${input.config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
+          maxRetries: 0, // 由 streamWithRetry 控制重试
+          providerLabel,
+        });
+      },
+      (reader, cbs) => parseResponsesStream(reader, cbs),
+      this.callbacks || {},
+      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+    );
   }
 
   // ========== 内部辅助 ==========
@@ -229,28 +232,23 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
     const optimized = this.optimizeInput(nonStreamInput);
     const endpoint = this.buildEndpoint(optimized);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), optimized.config.timeoutMs || DEFAULT_TIMEOUT_MS);
+    const response = await fetchWithRetry(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${optimized.config.apiKey}`,
+      },
+      body: JSON.stringify(this.transformRequest(optimized)),
+      timeoutMs: optimized.config.timeoutMs || DEFAULT_TIMEOUT_MS,
+      maxRetries: optimized.config.maxRetries ?? 2,
+      providerLabel: optimized.config.providerLabel || DEFAULT_PROVIDER_LABEL,
+    });
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${optimized.config.apiKey}`,
-        },
-        body: JSON.stringify(this.transformRequest(optimized)),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API error (${response.status}): ${errorText.slice(0, 200)}`);
-      }
-
-      return await response.json() as Record<string, unknown>;
-    } finally {
-      clearTimeout(timeoutId);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API error (${response.status}): ${errorText.slice(0, 200)}`);
     }
+
+    return await response.json() as Record<string, unknown>;
   }
 }

@@ -3,7 +3,7 @@
  *
  * 特性：
  * - 根据 api_format 路由到 OpenAI Chat / Anthropic Messages / OpenAI Responses
- * - 故障转移：请求模型失败 → 按 sort_index 顺序尝试下一个可用模型，失败模型自动锁定 10 分钟
+ * - 故障转移：请求模型失败 → 按 sort_index 顺序尝试下一个可用模型，失败模型自动锁定xx时间
  * - isDisable=true 的模型不出现在可用池中，过期锁定自动清空
  * - 支持 tool_calls 完整转发
  * - Token 使用量追踪
@@ -132,6 +132,48 @@ function getModelByName(name: string, userId?: number): ModelRow | undefined {
   return db.prepare('SELECT * FROM models WHERE name = ?').get(name) as ModelRow | undefined;
 }
 
+// ========== 重试机制 ==========
+
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_INTERVAL_MS = 500;
+
+/** 判断是否为可重试的错误（50x 上游错误 或 请求超时） */
+function isRetryableError(err: unknown): boolean {
+  const status = (err as any).status || (err as any).statusCode || 0;
+  const errName = (err as Error)?.name || '';
+  const errMsg = (err as Error)?.message || '';
+
+  // 50x 上游错误
+  if (status >= 500 && status < 600) return true;
+
+  // 请求超时（AbortError / TimeoutError / ECONNRESET / ETIMEDOUT）
+  if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ECONNREFUSED/i.test(errName)) return true;
+  if (/timeout|terminated|aborted|timed out/i.test(errMsg)) return true;
+
+  return false;
+}
+
+/** 带重试的异步执行：遇到 50x 或超时自动每隔 RETRY_INTERVAL_MS 重试，最多 RETRY_MAX_ATTEMPTS 次 */
+async function withRetry<T>(fn: () => Promise<T> | T): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await Promise.resolve(fn());
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RETRY_MAX_ATTEMPTS && isRetryableError(err)) {
+        const errMsg = (err as Error).message;
+        const status = (err as any).status || (err as any).statusCode || '-';
+        console.warn(`[proxy] Retryable error (attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS}): [${status}] ${errMsg}`);
+        await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 // ========== 故障转移核心 ==========
 
 /** 判断是否为"不支持多模态"类型的错误，这类错误不应锁定模型或故障转移 */
@@ -165,7 +207,7 @@ async function tryModelsSequentially<T>(
 
   for (const model of available) {
     try {
-      return await tryFn(model);
+      return await withRetry(() => tryFn(model));
     } catch (err) {
       const error = err as Error & { status?: number; statusCode?: number };
       const status = error.status || error.statusCode || 500;
@@ -233,6 +275,17 @@ function getOrderedModels(requestModelName: string, userId?: number): ModelRow[]
     : allModels;
 }
 
+/**
+ * 移除对象中值为 undefined 的 key，避免透传 undefined 到上游 API
+ */
+function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
+  const result = { ...obj };
+  for (const key of Object.keys(result)) {
+    if (result[key] === undefined) delete result[key];
+  }
+  return result;
+}
+
 // ========== 统一处理函数：Chat Completions ==========
 
 async function handleChatCompletions(req: Request, res: Response, userId?: number): Promise<void> {
@@ -252,15 +305,18 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   if (isStream) {
     if (res.headersSent) return;
 
-    const callbacks = createSSECallbacks('chat' as InputFormat, res);
     let idx = 0;
+    let callbacks: ReturnType<typeof createSSECallbacks> | null = null;
 
     while (idx < ordered.length) {
       const model = ordered[idx++];
       const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
-      const proxyBody: Record<string, unknown> = {
+      // 为当前 model 创建回调（传入 modelId 以自动跟踪 token）
+      callbacks = createSSECallbacks('chat' as InputFormat, res, { modelId: model.id, promptTokens, modelName: model.model_name });
+
+      const proxyBody: Record<string, unknown> = stripUndefined({
         model: model.model_name,
         messages: params.messages as unknown as Array<Record<string, unknown>>,
         max_tokens: params.maxTokens,
@@ -270,7 +326,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         tool_choice: params.toolChoice,
         stream: true,
         stream_options: { include_usage: true },
-      };
+      });
       if (params.system) proxyBody.system = params.system;
 
       // Anthropic 原生 API 路径：调用 /v1/messages，不走 Chat hub
@@ -346,8 +402,8 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       }
     }
 
-    callbacks.onError?.(new Error('所有可用模型均失败'));
-    callbacks.onDone?.();
+    callbacks!.onError?.(new Error('所有可用模型均失败'));
+    callbacks!.onDone?.();
   } else {
     // 非流式
     let result: any = null;
@@ -503,31 +559,11 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
       const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
-      const proxyBody: Record<string, unknown> = {
+      const proxyBody: Record<string, unknown> = stripUndefined({
         ...body,
         model: model.model_name,
         stream: true,
-      };
-
-      // openai-chat/anthropic 路径：将 Responses input 转为 Chat messages
-      if ((providerType === 'openai-chat' || providerType === 'anthropic') && Array.isArray(body.input)) {
-
-        const chatBody = convertResponsesRequestToChatRequest({
-          ...body,
-          model: requestModelName,
-          max_tokens: Math.min(
-            (body.max_output_tokens as number) ?? (body.max_tokens as number) ?? MAX_RESPONSE_TOKENS,
-            MAX_RESPONSE_TOKENS,
-          ),
-        });
-        proxyBody.messages = chatBody.messages;
-        proxyBody.max_tokens = (chatBody as any).max_tokens || (chatBody as any).max_completion_tokens || MAX_RESPONSE_TOKENS;
-        if ((chatBody as any).system) proxyBody.system = (chatBody as any).system;
-        if (body.instructions) proxyBody.instructions = body.instructions;
-        delete proxyBody.input;
-        delete proxyBody.previous_response_id;
-        delete proxyBody.text;
-      }
+      });
 
       // Anthropic 原生 API 路径
       if (providerType === 'anthropic' && Array.isArray(body.input)) {
@@ -622,8 +658,8 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
       }
     }
 
-    callbacks.onError?.(new Error('所有可用模型均失败'));
-    callbacks.onDone?.();
+    callbacks!.onError?.(new Error('所有可用模型均失败'));
+    callbacks!.onDone?.();
   } else {
     res.status(400).json({ error: { message: 'Responses API 仅支持流式模式', type: 'invalid_request' } });
   }
@@ -682,7 +718,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
       const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
-      const proxyBody: Record<string, unknown> = {
+      const proxyBody: Record<string, unknown> = stripUndefined({
         model: model.model_name,
         messages: params.messages as unknown as Array<Record<string, unknown>>,
         max_tokens: params.maxOutputTokens,
@@ -691,7 +727,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
         tools: params.tools as unknown as Array<Record<string, unknown>> | undefined,
         stream: true,
         stream_options: { include_usage: true },
-      };
+      });
       if (params.system) proxyBody.system = params.system;
       if (body.stop_sequences) proxyBody.stop_sequences = body.stop_sequences;
       if (body.metadata) proxyBody.metadata = body.metadata;
@@ -806,111 +842,6 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
 
   res.json(result);
 }
-
-// ========== 路由挂载 ==========
-
-// GET /v1/models
-router.get('/v1/models', (_req: Request, res: Response) => {
-  res.json({
-    object: 'list',
-    data: getAllModels()
-      .filter((m) => !m.isDisable)
-      .map(buildOpenAIModel),
-  });
-});
-
-// POST /v1/chat/completions
-router.post('/v1/chat/completions', (req: Request, res: Response) => {
-  handleChatCompletions(req, res);
-});
-
-// POST /v1/responses
-router.post('/v1/responses', (req: Request, res: Response) => {
-  handleResponses(req, res);
-});
-
-// POST /v1/messages — Anthropic Messages API
-router.post('/v1/messages', (req: Request, res: Response) => {
-  handleAnthropicMessages(req, res);
-});
-
-// POST /v1/anthropic/messages — Anthropic Messages API 别名路径
-router.post('/v1/anthropic/messages', (req: Request, res: Response) => {
-  handleAnthropicMessages(req, res);
-});
-
-// GET /v1/anthropic — Anthropic 兼容信息
-router.get('/v1/anthropic', (_req: Request, res: Response) => {
-  res.json({
-    type: 'info',
-    message: 'Anthropic-compatible proxy endpoint',
-    endpoints: {
-      messages: '/v1/anthropic/messages',
-      messages_legacy: '/v1/messages',
-    },
-    description: '使用此端点可作为 Anthropic Messages API 的代理，支持 Claude 系列模型及 OpenAI 兼容格式的自动转换',
-  });
-});
-
-// ========== Ollama 兼容接口 ==========
-
-router.get('/api/tags', (_req: Request, res: Response) => {
-  res.json({
-    models: getAvailableModels().map((model) => ({
-      name: model.name,
-      model: model.name,
-      remote_model: model.model_name,
-      remote_host: model.url,
-      modified_at: model.created_at,
-      size: 342,
-      digest: '',
-      details: {
-        parent_model: '',
-        format: '',
-        family: '',
-        families: null,
-        parameter_size: '',
-        quantization_level: '',
-        context_length: getEffectiveContentLength(model.max_content_length),
-      },
-      capabilities: parseModelCapabilities(model.capabilities),
-    })),
-  });
-});
-
-router.post('/api/show', (req: Request, res: Response) => {
-  const { model: name } = req.body as { model?: string };
-  const models = getAvailableModels();
-  const model = name ? getModelByName(name) : models[0];
-  if (!model) {
-    res.status(404).json({ error: 'model not found' });
-    return;
-  }
-  const effectiveContentLength = getEffectiveContentLength(model.max_content_length);
-  res.json({
-    name: model.name,
-    details: {
-      parent_model: '',
-      format: '',
-      family: '',
-      families: null,
-      parameter_size: '32682372656',
-      quantization_level: 'BF16',
-    },
-    model_info: {
-      'custom.context_length': effectiveContentLength,
-      'custom.embedding_length': 5376,
-      'general.architecture': 'custom',
-      'general.parameter_count': 32682372656,
-    },
-    capabilities: parseModelCapabilities(model.capabilities),
-    modified_at: model.created_at,
-  });
-});
-
-router.get('/api/version', (_req: Request, res: Response) => {
-  res.json({ version: '0.30.2' });
-});
 
 // ========== 用户名前缀路由 ==========
 
@@ -1178,9 +1109,6 @@ userRouter.post('/api/show', (req: Request, res: Response) => {
 userRouter.get('/api/version', (_req: Request, res: Response) => {
   res.json({ version: '0.30.2' });
 });
-
-// 挂载根路由（处理未在 userRouter 上面明确定义的路由）
-userRouter.use(router);
 
 export { userRouter };
 export default router;

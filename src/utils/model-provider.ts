@@ -447,7 +447,20 @@ export function convertToOpenAIChatMessages(messages: OpenAIMessage[]): GenericM
   for (const msg of messages) {
     const role = msg.role as 'system' | 'user' | 'assistant' | 'tool';
     if (role === 'system') {
-      result.push({ role: 'system', content: String(msg.content || '') });
+      const rawContent = msg.content;
+      let systemContent: string;
+      if (typeof rawContent === 'string') {
+        systemContent = rawContent;
+      } else if (Array.isArray(rawContent)) {
+        // OpenAI content parts 数组 → 拼接 text 段
+        systemContent = rawContent
+          .map((part: any) => (part.type === 'text' ? part.text : ''))
+          .filter(Boolean)
+          .join('\n');
+      } else {
+        systemContent = String(rawContent || '');
+      }
+      result.push({ role: 'system', content: systemContent });
       continue;
     }
     if (role === 'tool') {

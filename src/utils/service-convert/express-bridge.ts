@@ -19,6 +19,7 @@ import AnthropicToChatProxy from './Proxy/AnthropicToChatProxy';
 import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
 import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
+import { trackTokenUsage, trackApiCall } from '../tokenTracker';
 
 // ========== 常量 ==========
 
@@ -28,11 +29,13 @@ const INVISIBLE_SENTINEL = '\u2060';
 
 /** 写入 SSE data 行 */
 function writeSSE(res: Response, data: unknown): void {
+  if (res.writableEnded) return;
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 /** 写入命名 SSE 事件 */
 function writeSSEEvent(res: Response, event: string, data: unknown): void {
+  if (res.writableEnded) return;
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
@@ -55,18 +58,54 @@ interface PendingToolCall {
  *   data: {"choices":[{"delta":{"tool_calls":[...]},"index":0}]}
  *   data: [DONE]
  */
-export function createChatSSECallbacks(res: Response): SSECallbacks {
+export function createChatSSECallbacks(res: Response, options?: { modelId?: number; promptTokens?: number; modelName?: string }): SSECallbacks {
   const pendingTools = new Map<number, PendingToolCall>();
+  /** 响应级别固定的 ID，所有 chunk 共用同一 id */
+  const responseId = `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const createdAt = Math.floor(Date.now() / 1000);
+  const modelName = options?.modelName || '';
+  /** 是否已通过 onToolCall 标记有工具调用（用于 finish_reason） */
+  let hasEmittedToolCall = false;
+  /** 是否已发送 finish_reason chunk（避免重复） */
+  let hasSentFinish = false;
+  /** 是否已跟踪过 token（避免重复） */
+  let hasTrackedTokens = false;
+  /** 是否已发送 role="assistant" 初始化 chunk */
+  let hasSentRole = false;
+
+  /** 首次输出时发送 role:"assistant" 初始化 chunk（OpenAI 标准格式要求） */
+  const ensureRole = (): void => {
+    if (hasSentRole) return;
+    hasSentRole = true;
+    writeChunk({ role: 'assistant', content: '' });
+  };
 
   const writeChunk = (delta: Record<string, unknown>, finishReason: string | null = null): void => {
+    // 首次写 chunk 前确保 role 已发
+    ensureRole();
     const chunk: Record<string, unknown> = {
-      id: `chatcmpl-${Date.now()}`,
+      id: responseId,
       object: 'chat.completion.chunk',
-      created: Math.floor(Date.now() / 1000),
-      model: '',
+      created: createdAt,
+      model: modelName,
       choices: [{ index: 0, delta, finish_reason: finishReason }],
     };
     writeSSE(res, chunk);
+  };
+
+  /** 发送 finish_reason chunk（仅一次） */
+  const sendFinish = (reason: string): void => {
+    if (hasSentFinish) return;
+    hasSentFinish = true;
+    writeChunk({}, reason);
+  };
+
+  /** 跟踪 token（异步队列 + 去重） */
+  const trackUsage = (usage: TokenUsage): void => {
+    if (hasTrackedTokens || !options?.modelId) return;
+    hasTrackedTokens = true;
+    trackTokenUsage(options.modelId, usage);
+    trackApiCall(options.modelId);
   };
 
   return {
@@ -97,19 +136,26 @@ export function createChatSSECallbacks(res: Response): SSECallbacks {
         writeChunk({ tool_calls: [{ index: info.index, function: { arguments: delta } }] });
       }
     },
-    onToolCall: (toolCall: ToolCallInfo) => {
-      writeChunk({
-        tool_calls: [{
-          index: 0,
-          id: toolCall.id,
-          type: 'function',
-          function: { name: toolCall.function.name, arguments: toolCall.function.arguments },
-        }],
-      });
+    onToolCall: () => {
+      // 工具调用已通过 onToolDelta 增量流式完毕（name + arguments 逐段发送）。
+      // onToolCall 只是 finish_reason 后刷新剩余的工具调用，此时参数已完整累积。
+      // 注意：不要再写带完整 arguments 的 chunk，否则 LangChain 客户端会
+      // 把完整参数叠加到已累积的增量参数上，导致 JSON 重复解析失败。
+      hasEmittedToolCall = true;
     },
     onUsage: (usage: TokenUsage) => {
-      writeChunk({ content: INVISIBLE_SENTINEL }, 'stop');
+      // 跟踪 token（异步队列）
+      trackUsage(usage);
+
+      // 1. 先发 finish_reason chunk（空 delta + 正确的原因）
+      sendFinish(hasEmittedToolCall ? 'tool_calls' : 'stop');
+      // 2. 再发 usage chunk（标准 OpenAI 格式：choices 为空数组）
       writeSSE(res, {
+        id: responseId,
+        object: 'chat.completion.chunk',
+        created: createdAt,
+        model: modelName,
+        choices: [],
         usage: {
           prompt_tokens: usage.prompt_tokens,
           completion_tokens: usage.completion_tokens,
@@ -118,11 +164,20 @@ export function createChatSSECallbacks(res: Response): SSECallbacks {
       });
     },
     onDone: () => {
+      if (!hasSentFinish) {
+        sendFinish(hasEmittedToolCall ? 'tool_calls' : 'stop');
+      }
       res.write('data: [DONE]\n\n');
+      res.end();
     },
     onError: (error: Error) => {
       console.error(`[express-bridge] ChatSSE error:`, error.message);
       console.error(`[express-bridge] ChatSSE details:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      try {
+        res.write(`event: error\ndata: ${JSON.stringify({ code: 'stream_error', message: error.message })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } catch { /* 响应可能已结束 */ }
     },
     onConnectionStatus: () => { /* no-op */ },
   };
@@ -254,11 +309,24 @@ export function createResponsesSSECallbacks(res: Response): SSECallbacks {
       emitEvent('response.completed', {
         response: { status: 'completed', usage: null },
       });
+      res.write('data: [DONE]\n\n');
+      res.end();
     },
     onError: (error: Error) => {
       console.error(`[express-bridge] ResponsesSSE error:`, error.message);
       console.error(`[express-bridge] ResponsesSSE full error:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
       console.error(`[express-bridge] ResponsesSSE stack:`, error.stack?.split('\n').slice(0, 4).join('\n'));
+      // 向客户端发送失败事件
+      try {
+        writeSSEEvent(res, 'response.failed', {
+          response: {
+            status: 'failed',
+            error: { code: 'stream_error', message: error.message },
+          },
+        });
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } catch { /* 响应可能已结束 */ }
     },
     onConnectionStatus: () => { /* no-op */ },
   };
@@ -365,10 +433,19 @@ export function createAnthropicSSECallbacks(res: Response): SSECallbacks {
         usage: { input_tokens: 0, output_tokens: 0 },
       });
       emitEvent('message_stop', {});
+      res.write('data: [DONE]\n\n');
+      res.end();
     },
     onError: (error: Error) => {
       console.error(`[express-bridge] AnthropicSSE error:`, error.message);
       console.error(`[express-bridge] AnthropicSSE details:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      // 向客户端发送错误事件
+      try {
+        writeSSEEvent(res, 'error', { code: 'stream_error', message: error.message });
+        writeSSEEvent(res, 'message_stop', {});
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } catch { /* 响应可能已结束 */ }
     },
     onConnectionStatus: () => { /* no-op */ },
   };
@@ -418,9 +495,9 @@ export function pickProxy(
 /**
  * 获取输入格式对应的 SSE 回调工厂
  */
-export function createSSECallbacks(inputFormat: InputFormat, res: Response): SSECallbacks {
+export function createSSECallbacks(inputFormat: InputFormat, res: Response, options?: { modelId?: number; promptTokens?: number; modelName?: string }): SSECallbacks {
   switch (inputFormat) {
-    case 'chat': return createChatSSECallbacks(res);
+    case 'chat': return createChatSSECallbacks(res, options);
     case 'responses': return createResponsesSSECallbacks(res);
     case 'anthropic': return createAnthropicSSECallbacks(res);
   }

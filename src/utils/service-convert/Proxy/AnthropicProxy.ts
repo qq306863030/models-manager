@@ -12,6 +12,8 @@
 
 import BaseProxy from './common/BaseProxy';
 import type { AnthropicProxyInput, AnthropicRequestBody, SSECallbacks } from './common/types';
+import { fetchWithRetry } from './common/fetch-with-retry';
+import { streamWithRetry } from './common/sse-utils';
 
 export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void, AnthropicRequestBody> {
   private callbacks?: SSECallbacks;
@@ -58,13 +60,10 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
     body: AnthropicRequestBody,
     endpoint: string,
   ): Promise<void> {
-    this.callbacks?.onConnectionStatus?.({ state: 'connected' });
+    const providerLabel = input.config.providerLabel || 'Anthropic';
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), input.config.timeoutMs || 300_000);
-
-    try {
-      const response = await fetch(endpoint, {
+    await streamWithRetry(
+      () => fetchWithRetry(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -72,105 +71,87 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+        timeoutMs: input.config.timeoutMs || 300_000,
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+      }),
+      (reader, cbs) => this.parseAnthropicStream(reader, cbs),
+      this.callbacks || {},
+      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+    );
+  }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage: string;
+  /**
+   * Anthropic SSE 流解析（内联）
+   */
+  private async parseAnthropicStream(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    callbacks: SSECallbacks,
+  ): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('event:')) continue;
+        if (!trimmed.startsWith('data:')) continue;
+
+        const dataStr = trimmed.slice(5).trim();
         try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error?.message || errorJson.message || errorText;
-        } catch {
-          errorMessage = errorText;
-        }
-        throw new Error(`Anthropic API error (${response.status}): ${errorMessage}`);
-      }
+          const event = JSON.parse(dataStr);
 
-      if (!response.body) throw new Error('No response body received');
-
-      this.callbacks?.onConnectionStatus?.({ state: 'streaming' });
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          if (controller.signal.aborted) break;
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('event:')) continue;
-            if (!trimmed.startsWith('data:')) continue;
-
-            const dataStr = trimmed.slice(5).trim();
-            try {
-              const event = JSON.parse(dataStr);
-
-              switch (event.type) {
-                case 'content_block_delta': {
-                  const delta = event.delta;
-                  if (delta?.type === 'text_delta' && delta.text) {
-                    this.callbacks?.onContent?.(delta.text);
-                  }
-                  if (delta?.type === 'thinking_delta' && delta.thinking) {
-                    this.callbacks?.onThinking?.(delta.thinking);
-                  }
-                  if (delta?.type === 'input_json_delta' && delta.partial_json) {
-                    this.callbacks?.onToolDelta?.(delta.partial_json, {
-                      id: event.content_block?.id || '',
-                      index: event.index || 0,
-                      name: event.content_block?.name || '',
-                      field: 'arguments',
-                    });
-                  }
-                  break;
-                }
-                case 'content_block_start': {
-                  if (event.content_block?.type === 'tool_use') {
-                    this.callbacks?.onToolDelta?.(event.content_block.name || '', {
-                      id: event.content_block.id || '',
-                      index: event.index || 0,
-                      name: event.content_block.name || '',
-                      field: 'name',
-                    });
-                  }
-                  break;
-                }
-                case 'message_delta': {
-                  if (event.usage) {
-                    this.callbacks?.onUsage?.({ prompt_tokens: 0, completion_tokens: event.usage.output_tokens || 0, total_tokens: event.usage.output_tokens || 0 });
-                  }
-                  break;
-                }
-                case 'message_stop':
-                  this.callbacks?.onDone?.();
-                  return;
+          switch (event.type) {
+            case 'content_block_delta': {
+              const delta = event.delta;
+              if (delta?.type === 'text_delta' && delta.text) {
+                callbacks.onContent?.(delta.text);
               }
-            } catch { /* skip */ }
+              if (delta?.type === 'thinking_delta' && delta.thinking) {
+                callbacks.onThinking?.(delta.thinking);
+              }
+              if (delta?.type === 'input_json_delta' && delta.partial_json) {
+                callbacks.onToolDelta?.(delta.partial_json, {
+                  id: event.content_block?.id || '',
+                  index: event.index || 0,
+                  name: event.content_block?.name || '',
+                  field: 'arguments',
+                });
+              }
+              break;
+            }
+            case 'content_block_start': {
+              if (event.content_block?.type === 'tool_use') {
+                callbacks.onToolDelta?.(event.content_block.name || '', {
+                  id: event.content_block.id || '',
+                  index: event.index || 0,
+                  name: event.content_block.name || '',
+                  field: 'name',
+                });
+              }
+              break;
+            }
+            case 'message_delta': {
+              if (event.usage) {
+                callbacks.onUsage?.({ prompt_tokens: 0, completion_tokens: event.usage.output_tokens || 0, total_tokens: event.usage.output_tokens || 0 });
+              }
+              break;
+            }
+            case 'message_stop':
+              callbacks.onDone?.();
+              return;
           }
-        }
-        this.callbacks?.onDone?.();
-      } finally {
-        reader.releaseLock();
+        } catch { /* skip */ }
       }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        this.callbacks?.onDone?.();
-        return;
-      }
-      this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
+    callbacks.onDone?.();
   }
 
   async execute(input: AnthropicProxyInput, callbacks?: SSECallbacks): Promise<void> {

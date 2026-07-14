@@ -9,7 +9,8 @@
 import BaseProxy from './common/BaseProxy';
 import type { AnthropicProxyInput, SSECallbacks } from './common/types';
 import { anthropicRequestToChatRequest } from './common/convert-utils';
-import { parseChatCompletionsStream } from './common/sse-utils';
+import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { fetchWithRetry } from './common/fetch-with-retry';
 
 function logImageBlocks(prefix: string, messages: Array<Record<string, unknown>> | undefined): void {
   if (!Array.isArray(messages)) { console.log(`[AnthropicToResponses] ${prefix} messages is not an array:`, typeof messages); return; }
@@ -110,6 +111,7 @@ export default class AnthropicToResponsesProxy extends BaseProxy<AnthropicProxyI
   }
 
   protected async proxy(input: AnthropicProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
+    const providerLabel = input.config.providerLabel || 'AnthropicToResponses';
     console.log(`[AnthropicToResponses] ===== SENDING TO /chat/completions =====`);
     console.log(`[AnthropicToResponses] endpoint=${endpoint}`);
     if (!Array.isArray(body.messages)) {
@@ -119,61 +121,54 @@ export default class AnthropicToResponsesProxy extends BaseProxy<AnthropicProxyI
       console.log(`[AnthropicToResponses] messages_count=${body.messages.length} last_msg_role=${lastMsg?.role}`);
     }
 
-    this.callbacks?.onConnectionStatus?.({ state: 'connected' });
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), input.config.timeoutMs || 300_000);
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      console.log(`[AnthropicToResponses] response_status=${response.status} ${response.statusText}`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`[AnthropicToResponses] ERROR_BODY=${errorText.slice(0, 500)}`);
-        throw new Error(`API error (${response.status}): ${errorText.slice(0, 200)}`);
-      }
-      if (!response.body) throw new Error('No response body received');
-      console.log(`[AnthropicToResponses] ===== STREAM STARTED =====`);
-      this.callbacks?.onConnectionStatus?.({ state: 'streaming' });
-      const reader = response.body.getReader();
-      try {
-        await parseChatCompletionsStream(reader, {
-          onContent: (d) => {
-            console.log(`[AnthropicToResponses] SSE onContent delta_len=${d.length} preview=${d.slice(0, 100)}`);
-            this.callbacks?.onContent?.(d);
-          },
-          onThinking: (d) => {
-            console.log(`[AnthropicToResponses] SSE onThinking delta_len=${d.length}`);
-            this.callbacks?.onThinking?.(d);
-          },
-          onToolCall: (t) => {
-            console.log(`[AnthropicToResponses] SSE onToolCall id=${t.id} name=${t.function.name}`);
-            this.callbacks?.onToolCall?.(t);
-          },
-          onUsage: (u) => {
-            console.log(`[AnthropicToResponses] SSE onUsage prompt_tokens=${u.prompt_tokens} completion_tokens=${u.completion_tokens}`);
-            this.callbacks?.onUsage?.(u);
-          },
-          onDone: () => {
-            console.log(`[AnthropicToResponses] ===== STREAM DONE =====`);
-            this.callbacks?.onDone?.();
-          },
-          onError: (e) => {
-            console.log(`[AnthropicToResponses] SSE onError: ${e.message}`);
-            this.callbacks?.onError?.(e);
-          },
+    await streamWithRetry(
+      async () => {
+        const response = await fetchWithRetry(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
+          body: JSON.stringify(body),
+          timeoutMs: input.config.timeoutMs || 300_000,
+          maxRetries: input.config.maxRetries ?? 2,
+          providerLabel,
         });
-      } finally { reader.releaseLock(); }
-    } catch (error) {
-      console.log(`[AnthropicToResponses] ERROR: ${error instanceof Error ? error.message : String(error)}`);
-      if (error instanceof Error && error.name === 'AbortError') { console.log(`[AnthropicToResponses] ABORTED`); this.callbacks?.onDone?.(); return; }
-      this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    } finally { clearTimeout(timeoutId); }
+        console.log(`[AnthropicToResponses] response_status=${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log(`[AnthropicToResponses] ERROR_BODY=${errorText.slice(0, 500)}`);
+          throw new Error(`API error (${response.status}): ${errorText.slice(0, 200)}`);
+        }
+        console.log(`[AnthropicToResponses] ===== STREAM STARTED =====`);
+        return response;
+      },
+      (reader, cbs) => parseChatCompletionsStream(reader, {
+        onContent: (d) => {
+          console.log(`[AnthropicToResponses] SSE onContent delta_len=${d.length} preview=${d.slice(0, 100)}`);
+          cbs.onContent?.(d);
+        },
+        onThinking: (d) => {
+          console.log(`[AnthropicToResponses] SSE onThinking delta_len=${d.length}`);
+          cbs.onThinking?.(d);
+        },
+        onToolCall: (t) => {
+          console.log(`[AnthropicToResponses] SSE onToolCall id=${t.id} name=${t.function.name}`);
+          cbs.onToolCall?.(t);
+        },
+        onUsage: (u) => {
+          console.log(`[AnthropicToResponses] SSE onUsage prompt_tokens=${u.prompt_tokens} completion_tokens=${u.completion_tokens}`);
+          cbs.onUsage?.(u);
+        },
+        onDone: () => {
+          console.log(`[AnthropicToResponses] ===== STREAM DONE =====`);
+          cbs.onDone?.();
+        },
+        onError: (e) => {
+          console.log(`[AnthropicToResponses] SSE onError: ${e.message}`);
+          cbs.onError?.(e);
+        },
+      }),
+      this.callbacks || {},
+      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+    );
   }
 
   async execute(input: AnthropicProxyInput, callbacks?: SSECallbacks): Promise<void> {

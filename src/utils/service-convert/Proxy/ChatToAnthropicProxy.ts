@@ -8,7 +8,8 @@
 
 import BaseProxy from './common/BaseProxy';
 import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
-import { parseChatCompletionsStream } from './common/sse-utils';
+import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { fetchWithRetry } from './common/fetch-with-retry';
 
 export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxyInput, void, Record<string, unknown>> {
   private callbacks?: SSECallbacks;
@@ -48,36 +49,21 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
   }
 
   protected async proxy(input: ChatCompletionsProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
-    this.callbacks?.onConnectionStatus?.({ state: 'connected' });
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), input.config.timeoutMs || 300_000);
+    const providerLabel = input.config.providerLabel || 'ChatToAnthropic';
 
-    try {
-      const response = await fetch(endpoint, {
+    await streamWithRetry(
+      () => fetchWithRetry(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
         body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!response.ok) { const e = await response.text(); throw new Error(`API error (${response.status}): ${e.slice(0, 200)}`); }
-      if (!response.body) throw new Error('No response body received');
-      this.callbacks?.onConnectionStatus?.({ state: 'streaming' });
-      const reader = response.body.getReader();
-      try {
-        await parseChatCompletionsStream(reader, {
-          onContent: (d) => this.callbacks?.onContent?.(d),
-          onThinking: (d) => this.callbacks?.onThinking?.(d),
-          onToolCall: (t) => this.callbacks?.onToolCall?.(t),
-          onUsage: (u) => this.callbacks?.onUsage?.(u),
-          onDone: () => this.callbacks?.onDone?.(),
-          onError: (e) => this.callbacks?.onError?.(e),
-        });
-      } finally { reader.releaseLock(); }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') { this.callbacks?.onDone?.(); return; }
-      this.callbacks?.onError?.(error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    } finally { clearTimeout(timeoutId); }
+        timeoutMs: input.config.timeoutMs || 300_000,
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+      }),
+      (reader, cbs) => parseChatCompletionsStream(reader, cbs),
+      this.callbacks || {},
+      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+    );
   }
 
   async execute(input: ChatCompletionsProxyInput, callbacks?: SSECallbacks): Promise<void> {

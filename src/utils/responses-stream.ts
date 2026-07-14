@@ -74,6 +74,7 @@ function writeSSEEvent(res: Response, event: string, data: unknown): void {
 // ========== SSE 头部设置 ==========
 
 function setSSEHeaders(res: Response): void {
+  if (res.headersSent) return;
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

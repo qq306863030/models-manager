@@ -6,6 +6,7 @@
  */
 
 import type { SSECallbacks, ConnectionStatus } from './types';
+import { isRetryableError } from './fetch-with-retry';
 
 // ========== SSE 流解析 ==========
 
@@ -129,18 +130,26 @@ export async function parseChatCompletionsStream(
         try {
           const chunk = JSON.parse(jsonStr);
           const choice = chunk.choices?.[0];
+          const hasUsage = chunk.usage != null;
 
-          // Token 用量
-          if (chunk.usage && callbacks.onUsage) {
-            callbacks.onUsage({
-              prompt_tokens: chunk.usage.prompt_tokens ?? 0,
-              completion_tokens: chunk.usage.completion_tokens ?? 0,
-              total_tokens: chunk.usage.total_tokens ?? 0,
-              prompt_cache_hit_tokens: chunk.usage.prompt_cache_hit_tokens,
-            });
+          // 先用变量记下 usage，稍后再处理（确保 tool_calls / finish_reason 先处理完）
+          let pendingUsage = hasUsage
+            ? {
+                prompt_tokens: chunk.usage.prompt_tokens ?? 0,
+                completion_tokens: chunk.usage.completion_tokens ?? 0,
+                total_tokens: chunk.usage.total_tokens ?? 0,
+                prompt_cache_hit_tokens: chunk.usage.prompt_cache_hit_tokens,
+              }
+            : null;
+
+          if (!choice) {
+            // 没有 choice（例如单独的 usage chunk），仍然要触发 onUsage
+            if (pendingUsage && callbacks.onUsage) {
+              callbacks.onUsage(pendingUsage);
+              pendingUsage = null;
+            }
+            continue;
           }
-
-          if (!choice) continue;
 
           const delta = choice.delta;
 
@@ -195,6 +204,11 @@ export async function parseChatCompletionsStream(
               callbacks.onToolCall?.(toolCall);
             }
             pendingToolCalls.clear();
+          }
+
+          // Token 用量 — 最后处理（确保 tool_calls / finish_reason 已先发完）
+          if (pendingUsage && callbacks.onUsage) {
+            callbacks.onUsage(pendingUsage);
           }
         } catch {
           // JSON 解析失败跳过
@@ -415,4 +429,119 @@ export async function fetchSSEPost(
   }
 
   return response;
+}
+
+// ========== 流式重试 ==========
+
+/** streamWithRetry 配置 */
+export interface StreamRetryOptions {
+  /** 最大重试次数（默认 2） */
+  maxRetries?: number;
+  /** 提供商标签（用于日志） */
+  providerLabel?: string;
+  /** 重试间隔毫秒数（默认 800） */
+  retryIntervalMs?: number;
+}
+
+/**
+ * 带自动重试的 fetch + SSE 流解析
+ *
+ * 封装整个 fetch → stream parse 生命周期，当 SSE 流在传输过程中
+ * 被中断（对端关闭 socket / terminated）时，自动重试整个请求。
+ *
+ * 重试条件：
+ * - 错误可重试（连接超时、50x、terminated、SocketError 等）
+ * - 尚未向客户端发送任何内容（onContent/onThinking/onToolDelta/onToolCall 未被调用）
+ *
+ * 一旦已有内容发送给客户端，不再重试（避免客户端收到重复/断裂的内容）。
+ *
+ * @param fetcher  返回 Response 的函数（可使用 fetchWithRetry）
+ * @param parser   流解析函数（如 parseChatCompletionsStream / parseResponsesStream）
+ * @param callbacks SSE 回调
+ * @param options  重试配置
+ */
+export async function streamWithRetry(
+  fetcher: () => Promise<Response>,
+  parser: (reader: ReadableStreamDefaultReader<Uint8Array>, callbacks: SSECallbacks) => Promise<void>,
+  callbacks: SSECallbacks,
+  options?: StreamRetryOptions,
+): Promise<void> {
+  const maxRetries = options?.maxRetries ?? 2;
+  const providerLabel = options?.providerLabel || 'Upstream';
+  const retryIntervalMs = options?.retryIntervalMs ?? 800;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let hasEmittedContent = false;
+    let streamError: Error | null = null;
+
+    // 包装回调，追踪是否已向客户端发送内容
+    const trackingCallbacks: SSECallbacks = {
+      ...callbacks,
+      onContent: (d) => { hasEmittedContent = true; callbacks.onContent?.(d); },
+      onThinking: (d) => { hasEmittedContent = true; callbacks.onThinking?.(d); },
+      onToolDelta: (d, info) => { hasEmittedContent = true; callbacks.onToolDelta?.(d, info); },
+      onToolCall: (t) => { hasEmittedContent = true; callbacks.onToolCall?.(t); },
+      // 拦截 onError：解析器内部 catch 后不会 re-throw，需要在此捕获以便重试
+      onError: (e) => { streamError = e; },
+    };
+
+    try {
+      if (attempt > 0) {
+        console.warn(`[${providerLabel}] reconnecting (attempt ${attempt + 1}/${maxRetries + 1})...`);
+      }
+      callbacks.onConnectionStatus?.({ state: 'connected', attempt: attempt + 1, maxAttempts: maxRetries + 1 });
+
+      const response = await fetcher();
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage: string;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        } catch {
+          errorMessage = errorText;
+        }
+        const err = new Error(`${providerLabel} API error (${response.status}): ${errorMessage}`);
+        (err as any).status = response.status;
+        throw err;
+      }
+
+      if (!response.body) {
+        throw new Error('No response body received');
+      }
+
+      callbacks.onConnectionStatus?.({ state: 'streaming', attempt: attempt + 1, maxAttempts: maxRetries + 1 });
+
+      const reader = response.body.getReader();
+      try {
+        await parser(reader, trackingCallbacks);
+      } finally {
+        reader.releaseLock();
+      }
+
+      // 解析器内部 catch 后不 re-throw，检查是否有流错误
+      if (streamError) {
+        throw streamError;
+      }
+
+      return; // 成功完成
+    } catch (error) {
+      // 可重试：错误可重试 + 尚未向客户端发送任何内容
+      if (attempt < maxRetries && !hasEmittedContent && isRetryableError(error)) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        console.warn(`[${providerLabel}] stream interrupted, retrying (${attempt + 1}/${maxRetries}): ${errMsg}`);
+        callbacks.onConnectionStatus?.({
+          state: 'error',
+          attempt: attempt + 1,
+          maxAttempts: maxRetries + 1,
+          message: `连接中断，正在重试 (${attempt + 1}/${maxRetries})...`,
+        });
+        await new Promise((r) => setTimeout(r, retryIntervalMs));
+        continue;
+      }
+
+      throw error;
+    }
+  }
 }

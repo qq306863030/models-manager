@@ -8,7 +8,7 @@
  *     ├── 2. optimizeInput()      — 设置默认值、清理无效字段
  *     ├── 3. transformRequest()   — 请求格式转换（如 Anthropic → Chat/Responses）
  *     ├── 4. buildEndpoint()      — 构建上游 URL
- *     ├── 5. proxy()              — HTTP 转发（SSE 流或 JSON）
+ *     ├── 5. proxy()              — HTTP 转发（SSE 流或 JSON），内置自动重试
  *     ├── 6. transformResponse()  — 响应格式转换（反向）
  *     └── 7. optimizeOutput()     — 最终输出处理
  *
@@ -18,6 +18,8 @@
  * @template TOutput 输出类型
  * @template TBody   请求体类型（转换后发给上游的格式）
  */
+
+import { fetchWithRetry, isRetryableError } from './fetch-with-retry';
 export default abstract class BaseProxy<TInput = any, TOutput = any, TBody = Record<string, unknown>> {
 
   // ========== 生命周期步骤（子类覆写） ==========
@@ -63,41 +65,25 @@ export default abstract class BaseProxy<TInput = any, TOutput = any, TBody = Rec
 
   /**
    * 5. HTTP 代理转发 — 发送请求到上游并返回 Response
-   * 默认实现：POST JSON + SSE
+   * 使用 fetchWithRetry 实现自动重试（50x / 超时）
    */
   protected async proxy(input: TInput, body: TBody, endpoint: string): Promise<any> {
     const config = (input as any).config;
-    const controller = new AbortController();
     const timeoutMs = config?.timeoutMs ?? 300_000;
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config?.apiKey ?? ''}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+    const response = await fetchWithRetry(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config?.apiKey ?? ''}`,
+      },
+      body: JSON.stringify(body),
+      timeoutMs,
+      maxRetries: config?.maxRetries ?? 2,
+      providerLabel: config?.providerLabel || 'Upstream',
+    });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage: string;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error?.message || errorJson.message || errorText;
-        } catch {
-          errorMessage = errorText;
-        }
-        throw new Error(`${config?.providerLabel ?? 'Upstream'} API error (${response.status}): ${errorMessage}`);
-      }
-
-      return response;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return response;
   }
 
   /**
