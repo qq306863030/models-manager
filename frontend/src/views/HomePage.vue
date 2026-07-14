@@ -154,14 +154,14 @@
           <div class="stat-chart">
             <div class="stat-chart-title">全部模型</div>
             <TokenLineChart
-              :data="allStats"
-              :loading="statsLoading" />
+              title="全部模型"
+              :data="allStats" />
           </div>
           <div class="stat-chart" v-if="selectedModelId && selectedModelName">
             <div class="stat-chart-title">{{ selectedModelName }}</div>
             <TokenLineChart
-              :data="selectedModelStats"
-              :loading="statsLoading" />
+              :title="selectedModelName"
+              :data="selectedModelStats" />
           </div>
         </div>
       </el-card>
@@ -265,18 +265,14 @@ import { createModel, updateModel, type Model, type ModelForm } from '@/api/mode
 
 // 逻辑
 import {
-  modelLoading,
   statsLoading,
   modelList,
   checkedModelIds,
   selectedModelId,
   selectedModelName,
-  dateRange,
   allStats,
   selectedModelStats,
   modelStatMap,
-  modelLabelOptions,
-  addDialogRef,
   openAddDialog,
   handleAddSubmit,
   handleEditSubmit,
@@ -287,7 +283,6 @@ import {
   handleReorder,
   selectModel,
   apiDialogVisible,
-  proxyBaseUrl,
   userProxyBaseUrl,
   customApiKey,
   proxyEndpoints,
@@ -296,9 +291,11 @@ import {
   clearApiKey,
   copyEndpointWithKey,
   onMountedCallback,
+  fetchModels,
   loadStats,
   loadLockDuration,
   checkAndRefreshLockStatus,
+  addDialogRef,
 } from '@/App'
 
 const router = useRouter()
@@ -333,10 +330,6 @@ const isIndeterminate = computed(() => {
   const len = checkedModelIds.value.length
   return len > 0 && len < modelList.value.length
 })
-
-const onModelFilterChange = () => {
-  loadStats()
-}
 
 // 拖拽排序
 const onDragEnd = () => {

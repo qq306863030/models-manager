@@ -72,8 +72,8 @@ export const batchCreateModels = (data: BatchAddPayload) => {
   );
 };
 
-// 更新模型
-export const updateModel = (id: number, data: ModelForm) => {
+// 更新模型（支持部分更新）
+export const updateModel = (id: number, data: Partial<ModelForm>) => {
   return request.put<{ success: boolean; message: string }>(`/models/${id}`, data);
 };
 

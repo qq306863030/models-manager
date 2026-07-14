@@ -43,9 +43,6 @@ export const saveApiSettings = async () => {
   }
 };
 
-// 锁定相关
-let lockCheckTimer: ReturnType<typeof setInterval> | null = null;
-
 export const loadLockDuration = async () => {
   const res = await getUserSettings();
   if (res.success && res.data && res.data.lock_duration) {
@@ -53,19 +50,28 @@ export const loadLockDuration = async () => {
   }
 };
 
-export const checkAndRefreshLockStatus = () => {
+export const checkAndRefreshLockStatus = async () => {
   const now = Date.now();
-  modelList.value = modelList.value.map(m => {
-    if (m.lock_expire_at && m.lock_expire_at > 0) {
-      if (now >= m.lock_expire_at) {
-        // 锁定已过期，更新状态
-        updateModel(m.id, { is_locked: false, lock_expire_at: 0 }).then(() => {});
-        return { ...m, is_locked: false, lock_expire_at: 0 };
-      }
-    }
-    return m;
-  });
+  const lockMs = await getLockDurationMs();
+  const expiredModels = modelList.value.filter(
+    m => m.isLock > 0 && now - m.isLock > lockMs
+  );
+  for (const m of expiredModels) {
+    await updateModel(m.id, { isLock: 0 });
+    m.isLock = 0;
+  }
 };
+
+// 获取锁定持续时间（毫秒）
+async function getLockDurationMs(): Promise<number> {
+  try {
+    const res = await getUserSettings();
+    if (res.success && res.data?.lock_duration) {
+      return res.data.lock_duration * 1000;
+    }
+  } catch { /* ignore */ }
+  return 600 * 1000; // 默认 600 秒
+}
 
 // 初始化回调
 export const onMountedCallback = async () => {
@@ -252,7 +258,9 @@ export const handleEditSubmit = async (id: number, form: ModelForm) => {
 
 export const handleAddSubmit = async (form: ModelRowForm) => {
   try {
-    const res = await batchCreateModels([form]);
+    // 移动端：将单条 ModelRowForm 包装为 BatchAddPayload
+    const payload = { url: '', api_key: '', api_format: 1, items: [form] };
+    const res = await batchCreateModels(payload);
     if (res.success) {
       showToast('添加成功');
       fetchModels();
@@ -274,7 +282,7 @@ export const handleReorder = async (fromIndex: number, toIndex: number) => {
   list.splice(toIndex, 0, moved);
   modelList.value = list;
   try {
-    await reorderModels(list.map(m => m.id));
+    await reorderModels(list.map((m, idx) => ({ id: m.id, sort_index: idx })));
   } catch {
     fetchModels();
   }

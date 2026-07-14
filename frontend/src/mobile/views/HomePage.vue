@@ -113,7 +113,7 @@
           <div class="endpoints-section">
             <div class="endpoints-title">可用接口</div>
             <div v-for="ep in proxyEndpoints" :key="ep.path" class="endpoint-item" @click="copyText(userProxyBaseUrl + ep.path)">
-              <van-tag :type="ep.method === 'GET' ? 'success' : 'primary'" size="small" round>
+              <van-tag :type="ep.method === 'GET' ? 'success' : 'primary'" round>
                 {{ ep.method }}
               </van-tag>
               <span class="endpoint-desc">{{ ep.desc }}</span>
@@ -141,7 +141,7 @@ import {
   modelList, selectedModelId, statsLoading, allStats, modelStatMap,
   selectModel, handleCopy, handleDelete as doDelete, handleToggleLock,
   handleToggleDisable, handleEditSubmit, apiDialogVisible, customApiKey,
-  openApiDialog, loadApiSettings, fetchModels, loadStats, loadLockDuration,
+  openApiDialog, fetchModels, loadStats, loadLockDuration,
   checkAndRefreshLockStatus, selectedModelStats, selectedModelName, handleReorder
 } from '@/composables/useModels';
 import type { Model } from '@/api/modelService';

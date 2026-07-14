@@ -5,7 +5,7 @@
  * 维护最近 30 条错误消息列表。
  */
 
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 
 export interface ErrorLogEntry {
   timestamp: string
