@@ -21,10 +21,6 @@ import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
 import { trackTokenUsage, trackApiCall } from '../tokenTracker';
 
-// ========== 常量 ==========
-
-const INVISIBLE_SENTINEL = '\u2060';
-
 // ========== SSE 写入器 ==========
 
 /** 写入 SSE data 行 */
