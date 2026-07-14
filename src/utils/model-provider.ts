@@ -259,6 +259,23 @@ export function isMultimodalNotSupportedError(err: unknown): boolean {
   );
 }
 
+/**
+ * 判断是否为上游网关/代理故障类型的错误
+ *
+ * 某些 API 网关（如 OpenCode Console Go）在上游服务不可用时，
+ * 返回400而非5xx。这类错误不应锁定模型，应允许故障转移到下一个模型。
+ */
+export function isUpstreamGatewayError(err: unknown): boolean {
+  const msg = (err as Error)?.message || '';
+  return (
+    /Upstream request failed/i.test(msg) ||
+    /Internal server error/i.test(msg) ||
+    /gateway.*error/i.test(msg) ||
+    /upstream.*error/i.test(msg) ||
+    /provider.*error/i.test(msg)
+  );
+}
+
 // ========== 故障转移核心 ==========
 
 export async function tryModelsSequentially<T>(
@@ -285,8 +302,14 @@ export async function tryModelsSequentially<T>(
       const status = error.status || error.statusCode || 500;
       const errMsg = (err as Error).message;
 
+      // 客户端错误：不支持多模态 → 直接抛出，不锁定、不故障转移
       if (status === 400 && isMultimodalNotSupportedError(err)) {
         throw err;
+      }
+
+      // 上游网关故障（400 但实际是服务端问题）→ 不锁定模型，继续故障转移
+      if (status === 400 && isUpstreamGatewayError(err)) {
+        continue;
       }
 
       db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(now, model.id);

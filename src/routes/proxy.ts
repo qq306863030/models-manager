@@ -31,6 +31,7 @@ import {
   REQUEST_TIMEOUT_MS,
   API_FORMAT,
   isModelLocked,
+  isUpstreamGatewayError,
   callOpenAIChat,
   callAnthropic,
   callOpenAIResponses,
@@ -137,7 +138,7 @@ function getModelByName(name: string, userId?: number): ModelRow | undefined {
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INTERVAL_MS = 500;
 
-/** 判断是否为可重试的错误（50x 上游错误 或 请求超时） */
+/** 判断是否为可重试的错误（50x 上游错误、请求超时、或上游网关故障） */
 function isRetryableError(err: unknown): boolean {
   const status = (err as any).status || (err as any).statusCode || 0;
   const errName = (err as Error)?.name || '';
@@ -149,6 +150,9 @@ function isRetryableError(err: unknown): boolean {
   // 请求超时（AbortError / TimeoutError / ECONNRESET / ETIMEDOUT）
   if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ECONNREFUSED/i.test(errName)) return true;
   if (/timeout|terminated|aborted|timed out/i.test(errMsg)) return true;
+
+  // 上游网关故障：某些 API 网关在上游服务不可用时返回400而非5xx
+  if (/Upstream request failed|Internal server error|gateway.*error|upstream.*error|provider.*error/i.test(errMsg)) return true;
 
   return false;
 }
@@ -223,6 +227,11 @@ async function tryModelsSequentially<T>(
       // 不支持多模态等客户端错误：直接抛出，不锁定模型、不故障转移
       if (status === 400 && isMultimodalNotSupportedError(err)) {
         throw err;
+      }
+
+      // 上游网关故障（400 但实际是服务端问题）→ 不锁定模型，继续故障转移
+      if (status === 400 && isUpstreamGatewayError(err)) {
+        continue;
       }
 
       db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(now, model.id);
@@ -352,6 +361,13 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
             callbacks.onDone?.();
             return;
           }
+          // 上游网关故障：不锁定模型，继续故障转移
+          if (status === 400 && isUpstreamGatewayError(err)) {
+            if (idx < ordered.length) continue;
+            callbacks.onError?.(new Error('所有可用模型均失败'));
+            callbacks.onDone?.();
+            return;
+          }
           db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
           callbacks.onError?.(new Error('所有可用模型均失败'));
@@ -397,6 +413,10 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           callbacks.onError?.(err as Error);
           callbacks.onDone?.();
           return;
+        }
+        // 上游网关故障：不锁定模型，继续故障转移
+        if (status === 400 && isUpstreamGatewayError(err)) {
+          continue;
         }
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }
@@ -654,6 +674,10 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           callbacks.onDone?.();
           return;
         }
+        // 上游网关故障：不锁定模型，继续故障转移
+        if (status === 400 && isUpstreamGatewayError(err)) {
+          continue;
+        }
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }
     }
@@ -756,6 +780,10 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
           callbacks.onError?.(err as Error);
           callbacks.onDone?.();
           return;
+        }
+        // 上游网关故障：不锁定模型，继续故障转移
+        if (status === 400 && isUpstreamGatewayError(err)) {
+          continue;
         }
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }

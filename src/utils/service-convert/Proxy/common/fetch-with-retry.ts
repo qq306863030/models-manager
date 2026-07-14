@@ -9,7 +9,7 @@
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_INTERVAL_MS = 500;
 
-/** 判断错误是否可重试（50x 上游错误 或 请求超时） */
+/** 判断错误是否可重试（50x 上游错误、请求超时、或上游网关故障） */
 export function isRetryableError(err: unknown): boolean {
   const status = (err as any).status || (err as any).statusCode || 0;
   const errName = (err as Error)?.name || '';
@@ -21,6 +21,9 @@ export function isRetryableError(err: unknown): boolean {
   // 请求超时（AbortError / TimeoutError / ECONNRESET / ETIMEDOUT）
   if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ECONNREFUSED|SocketError/i.test(errName)) return true;
   if (/timeout|terminated|aborted|timed out|other side closed/i.test(errMsg)) return true;
+
+  // 上游网关故障：某些 API 网关在上游服务不可用时返回400而非5xx
+  if (/Upstream request failed|Internal server error|gateway.*error|upstream.*error|provider.*error/i.test(errMsg)) return true;
 
   return false;
 }
