@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'llm-manager',
       script: 'dist/app.js',
-      instances: 1,
+      instances: 4,
       exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',

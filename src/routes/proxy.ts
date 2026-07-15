@@ -63,6 +63,7 @@ import OpenAI from 'openai';
 
 // ===== Service-Convert Proxy 框架 =====
 import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type ProviderType } from '../utils/service-convert/express-bridge';
+import ChatPassthroughProxy from '../utils/service-convert/Proxy/ChatPassthroughProxy';
 
 const router = Router();
 
@@ -109,13 +110,15 @@ function getAllModels(userId?: number): ModelRow[] {
 
 function unlockExpiredModels(userId?: number): void {
   const now = Date.now();
-  const expiredIds = getAllModels(userId)
-    .filter((m) => m.isLock > 0 && now - m.isLock > LOCK_DURATION_MS)
-    .map((m) => m.id);
+  const expired = getAllModels(userId)
+    .filter((m) => m.isLock > 0 && now - m.isLock > LOCK_DURATION_MS);
 
-  if (expiredIds.length > 0) {
+  if (expired.length > 0) {
+    const expiredIds = expired.map((m) => m.id);
+    const expiredNames = expired.map((m) => m.name).join(', ');
     const placeholders = expiredIds.map(() => '?').join(',');
     db.prepare(`UPDATE models SET isLock = 0 WHERE id IN (${placeholders})`).run(...expiredIds);
+    console.log(`[proxy] 解锁过期的模型: ${expiredNames}`);
   }
 }
 
@@ -234,6 +237,7 @@ async function tryModelsSequentially<T>(
         continue;
       }
 
+      console.warn(`[proxy] 锁定模型: ${model.name}`);
       db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(now, model.id);
     }
   }
@@ -368,7 +372,8 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
             callbacks.onDone?.();
             return;
           }
-          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          console.warn(`[proxy] 锁定模型: ${model.name}`);
+        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
           callbacks.onError?.(new Error('所有可用模型均失败'));
           callbacks.onDone?.();
@@ -376,19 +381,22 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         }
       }
 
-      // 非 Anthropic 路径：设置 SSE 头后走 Proxy 框架
-      if (!res.headersSent) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
-      }
-
+      // 非 Anthropic 路径：走 Proxy 框架
+      // 注意：纯透传代理 (ChatPassthroughProxy) 会从上游响应复制 header，这里不预设 SSE 头
       const proxy = pickProxy('chat' as InputFormat, providerType);
       if (!proxy) {
         callbacks.onError?.(new Error(`不支持的转换: chat→${providerType}`));
         callbacks.onDone?.();
         return;
+      }
+
+      // 对于非透传代理（如 ChatToAnthropicProxy、ChatCompletionsToResponsesProxy），
+      // 需要预设 SSE 头，因为它们会通过 callbacks 写入 SSE
+      if (!(proxy instanceof ChatPassthroughProxy) && !res.headersSent) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
       }
 
       try {
@@ -397,7 +405,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           apiKey: model.api_key,
           providerLabel: `Chat→${providerType}`,
           timeoutMs: REQUEST_TIMEOUT_MS,
-        }, proxyBody, callbacks);
+        }, proxyBody, callbacks, res);
 
         trackApiCall(model.id);
         return;
@@ -418,6 +426,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
+        console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }
     }
@@ -628,7 +637,8 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
             callbacks.onDone?.();
             return;
           }
-          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          console.warn(`[proxy] 锁定模型: ${model.name}`);
+        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
           callbacks.onError?.(new Error('所有可用模型均失败'));
           callbacks.onDone?.();
@@ -678,6 +688,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
+        console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }
     }
@@ -785,6 +796,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
+        console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
       }
     }

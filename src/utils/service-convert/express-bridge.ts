@@ -19,6 +19,7 @@ import AnthropicToChatProxy from './Proxy/AnthropicToChatProxy';
 import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
 import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
+import ChatPassthroughProxy from './Proxy/ChatPassthroughProxy';
 import { trackTokenUsage, trackApiCall } from '../tokenTracker';
 
 // ========== SSE 写入器 ==========
@@ -496,7 +497,7 @@ export function pickProxy(
   inputFormat: InputFormat,
   providerType: ProviderType,
 ): BaseProxy<any, void, Record<string, unknown>> | null {
-  if (inputFormat === 'chat' && providerType === 'openai-chat') return new ChatCompletionsProxy();
+  if (inputFormat === 'chat' && providerType === 'openai-chat') return new ChatPassthroughProxy();
   if (inputFormat === 'chat' && providerType === 'anthropic') return new ChatToAnthropicProxy();
   if (inputFormat === 'chat' && providerType === 'openai-responses') return new ChatCompletionsToResponsesProxy();
 
@@ -529,12 +530,14 @@ export function createSSECallbacks(inputFormat: InputFormat, res: Response, opti
  * @param config 配置（baseUrl, apiKey, providerLabel, timeoutMs）
  * @param body 请求体
  * @param callbacks SSE 回调
+ * @param clientRes 客户端响应对象（透传代理需要）
  */
 export async function executeProxy(
   proxy: BaseProxy<any, void, Record<string, unknown>>,
   config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number },
   body: Record<string, unknown>,
   callbacks: SSECallbacks,
+  clientRes?: Response,
 ): Promise<void> {
   const input: any = {
     config: {
@@ -548,7 +551,13 @@ export async function executeProxy(
   };
 
   // 根据 proxy 类型调用 execute
-  if (proxy instanceof ChatCompletionsProxy || proxy instanceof ChatCompletionsToResponsesProxy || proxy instanceof ChatToAnthropicProxy) {
+  if (proxy instanceof ChatPassthroughProxy) {
+    // 纯透传代理：需要将客户端 Response 传入，以便直接 pipe 上游响应
+    if (clientRes) {
+      proxy.setClientResponse(clientRes);
+    }
+    await proxy.execute(input, callbacks);
+  } else if (proxy instanceof ChatCompletionsProxy || proxy instanceof ChatCompletionsToResponsesProxy || proxy instanceof ChatToAnthropicProxy) {
     await (proxy as any).execute(input, callbacks);
   } else if (proxy instanceof ResponsesProxy || proxy instanceof ResponsesToChatProxy || proxy instanceof ResponsesToAnthropicProxy) {
     await (proxy as any).execute(input, callbacks);

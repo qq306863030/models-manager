@@ -10,6 +10,7 @@ import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
 import AnthropicToChatProxy from './Proxy/AnthropicToChatProxy';
 import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
+import ChatPassthroughProxy from './Proxy/ChatPassthroughProxy';
 
 // ===== 导出代理类 =====
 export { default as ChatCompletionsProxy } from './Proxy/ChatCompletionsProxy';
@@ -21,6 +22,7 @@ export { default as ResponsesToAnthropicProxy } from './Proxy/ResponsesToAnthrop
 export { default as AnthropicToChatProxy } from './Proxy/AnthropicToChatProxy';
 export { default as AnthropicToResponsesProxy } from './Proxy/AnthropicToResponsesProxy';
 export { default as ChatToAnthropicProxy } from './Proxy/ChatToAnthropicProxy';
+export { default as ChatPassthroughProxy } from './Proxy/ChatPassthroughProxy';
 
 // ===== 公共类型与工具导出 =====
 export { default as BaseProxy } from './Proxy/common/BaseProxy';
