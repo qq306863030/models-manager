@@ -1,6 +1,7 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import morgan from 'morgan';
 import { WebSocketServer } from 'ws';
 import usersRouter from './routes/users';
@@ -12,6 +13,51 @@ import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
 import mcpRecordsRouter from './routes/mcpRecords';
 import { errorBroadcaster } from './utils/errorBroadcaster';
+
+// ========== 日志文件重定向 ==========
+// PM2 不支持动态日期文件名，在应用层重定向 stdout/stderr 到日期文件
+const logDir = path.resolve(__dirname, '../logs');
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+function getDateStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+let currentDate = getDateStr();
+let outStream = fs.createWriteStream(path.join(logDir, `backend-out-${currentDate}.log`), { flags: 'a' });
+let errStream = fs.createWriteStream(path.join(logDir, `backend-error-${currentDate}.log`), { flags: 'a' });
+
+/** 检查日期是否变更，变更时自动切换日志文件 */
+function rotateIfNeeded(): void {
+  const today = getDateStr();
+  if (today !== currentDate) {
+    currentDate = today;
+    outStream.end();
+    errStream.end();
+    outStream = fs.createWriteStream(path.join(logDir, `backend-out-${today}.log`), { flags: 'a' });
+    errStream = fs.createWriteStream(path.join(logDir, `backend-error-${today}.log`), { flags: 'a' });
+  }
+}
+
+// 定时检查日期变更（每 1 小时检查一次）
+setInterval(rotateIfNeeded, 3_600_000);
+
+// 重定向 process.stdout/stderr 到日期文件（同时保持原始输出）
+const origStdoutWrite = process.stdout.write.bind(process.stdout);
+const origStderrWrite = process.stderr.write.bind(process.stderr);
+
+process.stdout.write = ((chunk: any, encoding?: any, callback?: any) => {
+  rotateIfNeeded();
+  outStream.write(typeof chunk === 'string' ? chunk : String(chunk));
+  return origStdoutWrite(chunk, encoding, callback);
+}) as any;
+
+process.stderr.write = ((chunk: any, encoding?: any, callback?: any) => {
+  rotateIfNeeded();
+  errStream.write(typeof chunk === 'string' ? chunk : String(chunk));
+  return origStderrWrite(chunk, encoding, callback);
+}) as any;
 
 const app: Application = express();
 const PORT = process.env.PORT || 11888;

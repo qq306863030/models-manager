@@ -64,6 +64,7 @@ import OpenAI from 'openai';
 // ===== Service-Convert Proxy 框架 =====
 import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type ProviderType } from '../utils/service-convert/express-bridge';
 import ChatPassthroughProxy from '../utils/service-convert/Proxy/ChatPassthroughProxy';
+import { writeDebugLog, writeSSEDebugLog } from '../utils/debug-logger';
 
 const router = Router();
 
@@ -306,6 +307,13 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream === true;
 
+  // 统一请求日志（所有路径：流式/非流式均记录）
+  writeDebugLog(requestModelName, 'request', {
+    isStream,
+    bodyKeys: Object.keys(body),
+    body: JSON.stringify(body).slice(0, 3000),
+  });
+
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
     res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
@@ -403,11 +411,15 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         await executeProxy(proxy, {
           baseUrl: baseURL,
           apiKey: model.api_key,
+          modelId: model.id,
           providerLabel: `Chat→${providerType}`,
           timeoutMs: REQUEST_TIMEOUT_MS,
         }, proxyBody, callbacks, res);
 
         trackApiCall(model.id);
+        // token 统计由代理内部处理：
+        // - ChatPassthroughProxy 在透传时异步解析 SSE usage
+        // - 其他代理通过 onUsage 回调触发 trackTokenUsage
         return;
       } catch (err) {
         const error = err as Error & { status?: number; statusCode?: number };
@@ -469,6 +481,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       trackTokenUsage(usedModel.id, { prompt_tokens: promptTokens, completion_tokens: estimateTextTokens(outText), total_tokens: promptTokens + estimateTextTokens(outText) });
     }
     trackApiCall(usedModel?.id);
+    writeSSEDebugLog(requestModelName, 'response', JSON.stringify(result).slice(0, 5000));
     res.json(result);
   }
 }

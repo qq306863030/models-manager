@@ -9,7 +9,7 @@
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_INTERVAL_MS = 500;
 
-/** 判断错误是否可重试（50x 上游错误、请求超时、或上游网关故障） */
+/** 判断错误是否可重试（50x 上游错误、请求超时、上游网关故障、空响应） */
 export function isRetryableError(err: unknown): boolean {
   const status = (err as any).status || (err as any).statusCode || 0;
   const errName = (err as Error)?.name || '';
@@ -25,6 +25,9 @@ export function isRetryableError(err: unknown): boolean {
   // 上游网关故障：某些 API 网关在上游服务不可用时返回400而非5xx
   if (/Upstream request failed|Internal server error|gateway.*error|upstream.*error|provider.*error/i.test(errMsg)) return true;
 
+  // 响应内容异常：无 choices（上游返回空结果）
+  if (/no choices/i.test(errMsg)) return true;
+
   return false;
 }
 
@@ -37,13 +40,20 @@ export interface FetchWithRetryOptions extends RequestInit {
   retryIntervalMs?: number;
   /** 日志标签 */
   providerLabel?: string;
+  /**
+   * 响应校验函数 — 在响应成功返回后被调用，可检查响应内容。
+   * 如果校验失败，抛出的错误会被 isRetryableError 判断，
+   * 符合条件时自动重试。
+   */
+  validateResponse?: (response: globalThis.Response) => Promise<void> | void;
 }
 
 /**
- * 带自动重试的 fetch
+ * 带自动重试的 fetch，支持响应内容校验
  *
  * 每个 attempt 独立创建 AbortController 并设置超时。
  * 遇到可重试错误时等待 retryIntervalMs 后重试。
+ * 如果提供了 validateResponse，在响应成功后调用，可校验响应内容并触发重试。
  */
 export async function fetchWithRetry(
   endpoint: string,
@@ -54,6 +64,7 @@ export async function fetchWithRetry(
     maxRetries = DEFAULT_MAX_RETRIES,
     retryIntervalMs = DEFAULT_INTERVAL_MS,
     providerLabel = 'Upstream',
+    validateResponse,
     ...fetchOptions
   } = options;
 
@@ -83,6 +94,11 @@ export async function fetchWithRetry(
         const err = new Error(`${providerLabel} API error (${response.status}): ${errorMessage}`);
         (err as any).status = response.status;
         throw err;
+      }
+
+      // 响应内容校验（如有提供）
+      if (validateResponse) {
+        await validateResponse(response);
       }
 
       return response;

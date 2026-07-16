@@ -20,7 +20,7 @@ import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
 import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
 import ChatPassthroughProxy from './Proxy/ChatPassthroughProxy';
-import { trackTokenUsage, trackApiCall } from '../tokenTracker';
+import { trackTokenUsage } from '../tokenTracker';
 
 // ========== SSE 写入器 ==========
 
@@ -102,7 +102,7 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
     if (hasTrackedTokens || !options?.modelId) return;
     hasTrackedTokens = true;
     trackTokenUsage(options.modelId, usage);
-    trackApiCall(options.modelId);
+    // trackApiCall 由路由处理器统一调用，避免重复
   };
 
   return {
@@ -534,7 +534,7 @@ export function createSSECallbacks(inputFormat: InputFormat, res: Response, opti
  */
 export async function executeProxy(
   proxy: BaseProxy<any, void, Record<string, unknown>>,
-  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number },
+  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number; modelId?: number },
   body: Record<string, unknown>,
   callbacks: SSECallbacks,
   clientRes?: Response,
@@ -543,6 +543,7 @@ export async function executeProxy(
     config: {
       baseUrl: config.baseUrl.replace(/\/+$/, ''),
       apiKey: config.apiKey,
+      modelId: config.modelId,
       providerLabel: config.providerLabel || 'Proxy',
       timeoutMs: config.timeoutMs || 300_000,
       maxRetries: config.maxRetries ?? 2,

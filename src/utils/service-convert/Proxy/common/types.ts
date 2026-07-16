@@ -94,6 +94,8 @@ export interface ProxyRequestConfig {
   baseUrl: string;
   /** API 密钥 */
   apiKey: string;
+  /** 模型数据库 ID（用于 token 统计） */
+  modelId?: number;
   /** 提供商标签（用于日志） */
   providerLabel?: string;
   /** 请求超时时间（毫秒），默认 300000 */

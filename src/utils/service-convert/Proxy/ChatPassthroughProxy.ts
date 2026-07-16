@@ -16,8 +16,10 @@
 
 import { Response } from 'express';
 import BaseProxy from './common/BaseProxy';
-import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
+import type { ChatCompletionsProxyInput, SSECallbacks, TokenUsage } from './common/types';
 import { fetchWithRetry } from './common/fetch-with-retry';
+import { trackTokenUsage } from '../../tokenTracker';
+import { writeDebugLog, writeSSEDebugLog } from '../../debug-logger';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_PROVIDER_LABEL = 'ChatPassthrough';
@@ -48,6 +50,7 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
       config: {
         baseUrl: input.config.baseUrl.replace(/\/+$/, ''),
         apiKey: input.config.apiKey,
+        modelId: input.config.modelId,
         providerLabel: input.config.providerLabel || DEFAULT_PROVIDER_LABEL,
         timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
         maxRetries: input.config.maxRetries ?? 2,
@@ -71,7 +74,17 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
     endpoint: string,
   ): Promise<void> {
     const providerLabel = input.config.providerLabel || DEFAULT_PROVIDER_LABEL;
+    const logEndpoint = `${providerLabel} ${endpoint}`;
 
+    // 记录请求体
+    writeDebugLog(logEndpoint, 'request', {
+      endpoint,
+      model: body.model,
+      bodyKeys: Object.keys(body),
+      body: JSON.stringify(body).slice(0, 5000), // 限制长度避免日志过大
+    });
+
+    // fetchWithRetry 默认重试 3 次，间隔 500ms + 响应内容校验
     const upstreamResponse = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: {
@@ -80,8 +93,70 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
       },
       body: JSON.stringify(body),
       timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
-      maxRetries: input.config.maxRetries ?? 2,
+      maxRetries: input.config.maxRetries ?? 3,
+      retryIntervalMs: 500,
       providerLabel,
+      // 校验响应内容：检查是否有 choices（VS Code 会因空响应报错）
+      validateResponse: async (fetchResponse: globalThis.Response) => {
+        const contentType = (fetchResponse.headers.get('Content-Type') || '').toLowerCase();
+
+        // 非 SSE（JSON 响应）→ clone 后解析 body 检查
+        if (!contentType.includes('text/event-stream')) {
+          const cloned = fetchResponse.clone();
+          const bodyText = await cloned.text();
+          // JSON 响应直接记录完整 body
+          writeSSEDebugLog(logEndpoint, 'upstream', bodyText, 10000);
+          let json: Record<string, unknown>;
+          try {
+            json = JSON.parse(bodyText);
+          } catch {
+            writeDebugLog(logEndpoint, 'error', { error: 'Non-SSE response invalid JSON', body: bodyText.slice(0, 500) });
+            throw new Error(`Response contained no choices (invalid JSON)`);
+          }
+          const choices = json.choices;
+          if (!choices || (Array.isArray(choices) && choices.length === 0)) {
+            writeDebugLog(logEndpoint, 'validate', { status: fetchResponse.status, contentType, body: bodyText.slice(0, 2000) });
+            throw new Error(`Response contained no choices`);
+          }
+          return;
+        }
+
+        // SSE 响应 → clone 后读取第一个 data: 行检查 choices
+        if (!fetchResponse.body) throw new Error('Response contained no choices (no body)');
+        const cloned = fetchResponse.clone();
+        // 读取整个 SSE 响应并记录（clone 不影响原始 body）
+        const fullReader = cloned.body!.getReader();
+        let fullText = '';
+        while (true) {
+          const { done, value } = await fullReader.read();
+          if (done) break;
+          fullText += new TextDecoder().decode(value, { stream: true });
+        }
+        writeSSEDebugLog(logEndpoint, 'upstream', fullText, 10000);
+
+        // 从完整响应中检查是否有 choices
+        const allLines = fullText.split('\n');
+        let hasChoices = false;
+        for (const line of allLines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            try {
+              const chunk = JSON.parse(jsonStr) as Record<string, unknown>;
+              const choices = chunk.choices;
+              if (Array.isArray(choices) && choices.length > 0) {
+                hasChoices = true;
+                break;
+              }
+            } catch { /* 跳过 */ }
+          }
+        }
+        if (!hasChoices) {
+          writeDebugLog(logEndpoint, 'validate', { status: fetchResponse.status, contentType, result: 'no choices' });
+          throw new Error('Response contained no choices');
+        }
+      },
     });
 
     // 将上游响应的 header 复制到客户端响应
@@ -97,28 +172,72 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
       clientRes.flushHeaders();
     }
 
-    // 将上游响应 body 直接 pipe 到客户端响应
+    // 将上游响应 body 直接 pipe 到客户端响应，同时异步解析 SSE 中的 usage
     if (upstreamResponse.body) {
       const reader = upstreamResponse.body.getReader();
       const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let capturedUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
+      let chunkIndex = 0;
+      const logEndpoint = `${providerLabel} ${endpoint}`;
 
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (clientRes.writableEnded) break;
-          // 直接写入原始字节
+
+          chunkIndex++;
+
+          // 直接写入原始字节（透传，不修改）
           clientRes.write(value);
+
+          // 异步解析：解码文本并检查 SSE 中的 usage（不影响透传性能）
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            try {
+              const chunk = JSON.parse(jsonStr) as Record<string, unknown>;
+              if (chunk.usage) {
+                capturedUsage = chunk.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+              }
+            } catch {
+              // 解析失败跳过（不影响透传）
+            }
+          }
         }
       } catch (err) {
-        // 流中断时尝试发送错误
+        // 流中断 → 记录日志 + 调用 onError（内部已写 [DONE] + res.end()）
+        writeDebugLog(logEndpoint, 'error', { chunksStreamed: chunkIndex, error: (err as Error).message });
         if (!clientRes.writableEnded) {
           this.callbacks?.onError?.(err instanceof Error ? err : new Error(String(err)));
         }
+        return;
+      }
+
+      // 流正常结束 → 记录下游完整响应
+      writeSSEDebugLog(logEndpoint, 'downstream', sseBuffer, 10000);
+
+      // 异步追踪 token（使用捕获的 usage 或估计值）
+      if (capturedUsage) {
+        trackTokenUsage(input.config.modelId, capturedUsage);
+      } else {
+        // 上游未返回 usage 时用估计值
+        trackTokenUsage(input.config.modelId, {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+        });
       }
     }
 
-    // 通知完成
+    // 通知完成（写 [DONE] + res.end()）
     this.callbacks?.onDone?.();
   }
 
