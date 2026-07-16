@@ -52,6 +52,35 @@ ai-server start
 
 > 首次登录后请及时修改密码！
 
+### Docker 部署
+
+```bash
+# 1. 创建 docker-compose.yml 文件（内容见下方）
+# 2. 启动容器
+docker compose up -d
+
+# 3. 查看日志
+docker compose logs -f
+
+# 4. 停止容器
+docker compose down
+```
+
+```yaml
+# docker-compose.yml
+services:
+  ai-manager:
+    image: node:24
+    container_name: ai-manager
+    ports:
+      - "11888:11888"
+    command: >
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && npx pm2-runtime start ecosystem.config.js"
+    restart: unless-stopped
+```
+
+> 使用 `pm2-runtime` 而非 `ai-server start`，确保进程在前台运行，容器不会异常退出。
+
 ## 📖 使用方法
 
 ### CLI 命令

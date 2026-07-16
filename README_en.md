@@ -52,6 +52,35 @@ ai-server start
 
 > Please change the password after first login!
 
+### Docker Deployment
+
+```bash
+# 1. Create docker-compose.yml (see content below)
+# 2. Start the container
+docker compose up -d
+
+# 3. View logs
+docker compose logs -f
+
+# 4. Stop the container
+docker compose down
+```
+
+```yaml
+# docker-compose.yml
+services:
+  ai-manager:
+    image: node:24
+    container_name: ai-manager
+    ports:
+      - "11888:11888"
+    command: >
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && npx pm2-runtime start ecosystem.config.js"
+    restart: unless-stopped
+```
+
+> Uses `pm2-runtime` instead of `ai-server start` to keep the process running in the foreground, preventing unexpected container exits.
+
 ## 📖 Usage
 
 ### CLI Commands

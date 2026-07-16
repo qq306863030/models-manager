@@ -1,0 +1,9 @@
+services:
+  ai-manager:
+    image: node:24
+    container_name: ai-manager
+    ports:
+      - "11888:11888"
+    command: >
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && npx pm2-runtime start ecosystem.config.js"
+    restart: unless-stopped
