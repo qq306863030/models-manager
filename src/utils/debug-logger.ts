@@ -1,8 +1,8 @@
 /**
- * Debug 日志工具 — 将上游/下游响应数据写入时间戳日志文件
+ * Debug 日志工具 — 请求/响应数据先写入内存，仅在请求报错时落盘
  *
  * 日志文件命名：logs/YYYY-MM-DD-HH.log
- * 用于调试"no choices"等偶发问题，避免 console.log 被轮转日志淹没。
+ * 避免正常请求产生大量磁盘 I/O，只有异常请求才记录完整输入输出。
  */
 
 import * as fs from 'fs';
@@ -37,16 +37,80 @@ function getLogTime(): string {
   return new Date().toISOString();
 }
 
-/** 日志级别 */
-type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+// ========== 请求级别日志缓冲区 ==========
+
+export interface RequestLogBuffer {
+  /** 请求端点标识 */
+  endpoint: string;
+  /** 日志条目列表 */
+  entries: Array<{ time: string; direction: string; data: string }>;
+  /** 是否已写入磁盘 */
+  flushed: boolean;
+}
 
 /**
- * 写入调试日志
- *
- * @param endpoint 请求端点标识（用于区分不同上游）
- * @param direction 'upstream' | 'downstream'
- * @param data      日志数据（对象会被 JSON 序列化）
+ * 创建请求级别的日志缓冲区
+ * 数据先写入内存，请求成功时丢弃，请求失败时落盘
  */
+export function createRequestLog(endpoint: string): RequestLogBuffer {
+  return { endpoint, entries: [], flushed: false };
+}
+
+/**
+ * 向缓冲区追加一条日志
+ */
+export function appendToLog(
+  buffer: RequestLogBuffer,
+  direction: string,
+  data: unknown,
+  maxLen: number = 10000,
+): void {
+  const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const truncated = dataStr.length > maxLen
+    ? dataStr.slice(0, maxLen) + `\n... [truncated ${dataStr.length - maxLen} chars]`
+    : dataStr;
+  buffer.entries.push({ time: getLogTime(), direction: direction.toUpperCase(), data: truncated });
+}
+
+/**
+ * 将缓冲区内容写入磁盘（日志文件），并标记为已刷写
+ * 仅在请求报错时调用
+ */
+export function flushLog(buffer: RequestLogBuffer): void {
+  if (buffer.flushed || buffer.entries.length === 0) return;
+  buffer.flushed = true;
+
+  try {
+    const logDir = path.resolve(process.cwd(), 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const filename = `${getLogTimestamp()}.log`;
+    const filepath = path.join(logDir, filename);
+
+    const lines = buffer.entries.map(e =>
+      `[${e.time}] [${e.direction}] ${buffer.endpoint}\n${e.data}`
+    ).join('\n\n');
+
+    fs.appendFile(filepath, lines + '\n\n', (err) => {
+      if (err) console.error(`[debug-logger] write failed:`, err.message);
+    });
+  } catch (err) {
+    // 日志本身失败不影响主流程
+  }
+}
+
+/**
+ * 丢弃缓冲区内容（请求成功时调用）
+ */
+export function clearLog(buffer: RequestLogBuffer): void {
+  buffer.entries = [];
+  buffer.flushed = false;
+}
+
+// ========== 兼容旧接口：直接写磁盘（保留备用） ==========
+
 export function writeDebugLog(
   endpoint: string,
   direction: 'upstream' | 'downstream' | 'error' | 'validate' | 'request' | 'response',
@@ -65,7 +129,6 @@ export function writeDebugLog(
     const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
     const line = `[${time}] [${direction.toUpperCase()}] ${endpoint}\n${dataStr}\n\n`;
 
-    // 追加写入，不阻塞主流程
     fs.appendFile(filepath, line, (err) => {
       if (err) {
         console.error(`[debug-logger] write failed:`, err.message);
@@ -76,9 +139,6 @@ export function writeDebugLog(
   }
 }
 
-/**
- * 写入 SSE 调试日志（限制最大长度，避免日志文件过大）
- */
 export function writeSSEDebugLog(
   endpoint: string,
   direction: 'upstream' | 'downstream' | 'error' | 'validate' | 'request' | 'response',
