@@ -47,15 +47,40 @@ setInterval(rotateIfNeeded, 3_600_000);
 const origStdoutWrite = process.stdout.write.bind(process.stdout);
 const origStderrWrite = process.stderr.write.bind(process.stderr);
 
+/** 获取当前时间戳 [YYYY-MM-DD HH:mm:ss] */
+function getTimestamp(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${mo}-${dd} ${h}:${mi}:${s}`;
+}
+
+/** 给每行添加时间戳前缀 */
+function prefixTimestamp(chunk: any): string {
+  const ts = getTimestamp();
+  const str = typeof chunk === 'string' ? chunk : String(chunk);
+  // 按行分割，每行加时间戳
+  return str.split('\n').map((line, i, arr) => {
+    if (i === arr.length - 1 && line === '') return ''; // 末尾空行
+    return line ? `${ts} - ${line}` : '';
+  }).join('\n') + (str.endsWith('\n') ? '\n' : '');
+}
+
 process.stdout.write = ((chunk: any, encoding?: any, callback?: any) => {
   rotateIfNeeded();
-  outStream.write(typeof chunk === 'string' ? chunk : String(chunk));
+  const prefixed = prefixTimestamp(chunk);
+  outStream.write(prefixed);
   return origStdoutWrite(chunk, encoding, callback);
 }) as any;
 
 process.stderr.write = ((chunk: any, encoding?: any, callback?: any) => {
   rotateIfNeeded();
-  errStream.write(typeof chunk === 'string' ? chunk : String(chunk));
+  const prefixed = prefixTimestamp(chunk);
+  errStream.write(prefixed);
   return origStderrWrite(chunk, encoding, callback);
 }) as any;
 
