@@ -515,16 +515,6 @@ export const copyEndpointWithKey = (path: string): string => {
 
 // ========== 生命周期 ==========
 export const onMountedCallback = async () => {
-  // 从后端读取服务配置
-  try {
-    const res = await fetch('/api/config')
-    const data = await res.json()
-    if (data.origin) {
-      proxyBaseUrl.value = data.origin
-    }
-  } catch {
-    // 读取失败，保持默认 origin
-  }
   // 加载 API Key 状态
   await loadApiKeyStatus()
   await fetchModels()
