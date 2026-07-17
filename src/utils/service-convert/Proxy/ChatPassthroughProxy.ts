@@ -224,10 +224,17 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
           }
         }
       } catch (err) {
-        // 流中断 → 记录日志到内存并落盘，调用 onError
+        // 流中断 → 记录日志到内存并落盘
         appendToLog(logBuffer, 'downstream', sseBuffer, 10000);
         appendToLog(logBuffer, 'error', { chunksStreamed: chunkIndex, error: (err as Error).message });
         flushLog(logBuffer);
+
+        if (chunkIndex === 0) {
+          // 尚未向客户端发送任何内容 → 向上抛出错误，让调用方故障转移到下一个模型
+          throw err;
+        }
+
+        // 已经有内容发送给客户端 → 吞掉错误，通过 onError 通知客户端流中断
         if (!clientRes.writableEnded) {
           this.callbacks?.onError?.(err instanceof Error ? err : new Error(String(err)));
         }

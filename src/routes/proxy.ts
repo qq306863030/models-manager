@@ -152,8 +152,8 @@ function isRetryableError(err: unknown): boolean {
   if (status >= 500 && status < 600) return true;
 
   // 请求超时（AbortError / TimeoutError / ECONNRESET / ETIMEDOUT）
-  if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ECONNREFUSED/i.test(errName)) return true;
-  if (/timeout|terminated|aborted|timed out/i.test(errMsg)) return true;
+  if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ECONNREFUSED|SocketError/i.test(errName)) return true;
+  if (/timeout|terminated|aborted|timed out|other side closed/i.test(errMsg)) return true;
 
   // 上游网关故障：某些 API 网关在上游服务不可用时返回400而非5xx
   if (/Upstream request failed|Internal server error|gateway.*error|upstream.*error|provider.*error/i.test(errMsg)) return true;
@@ -380,6 +380,13 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
             callbacks.onDone?.();
             return;
           }
+          // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
+          if (isRetryableError(err)) {
+            if (idx < ordered.length) continue;
+            callbacks.onError?.(new Error('所有可用模型均失败'));
+            callbacks.onDone?.();
+            return;
+          }
           console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
@@ -437,6 +444,13 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         // 上游网关故障：不锁定模型，继续故障转移
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
+        }
+        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
+        if (isRetryableError(err)) {
+          if (idx < ordered.length) continue;
+          callbacks!.onError?.(new Error('所有可用模型均失败'));
+          callbacks!.onDone?.();
+          return;
         }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
@@ -643,8 +657,8 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           const errMsg = (err as Error).message;
           console.error(`[proxy] Anthropic model "${model.name}" failed:`, { name: errName, message: errMsg, url: model.url, apiFormat: model.api_format, stack: (err as Error).stack?.split('\n').slice(0, 8).join('\n') });
           errorBroadcaster.emitError(model.id, model.name, 'anthropic_error', errMsg);
-          if (/abort|terminated|timeout/i.test(errName) || /terminated|aborted|timeout/i.test(errMsg)) {
-            console.error(`[proxy] Timeout/terminated (not locking model "${model.name}")`);
+          if (isRetryableError(err)) {
+            console.error(`[proxy] 临时错误（不锁定模型）: ${model.name}`);
             if (idx < ordered.length) continue;
             callbacks.onError?.(new Error('所有可用模型均失败'));
             callbacks.onDone?.();
@@ -700,6 +714,13 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
         // 上游网关故障：不锁定模型，继续故障转移
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
+        }
+        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
+        if (isRetryableError(err)) {
+          if (idx < ordered.length) continue;
+          callbacks!.onError?.(new Error('所有可用模型均失败'));
+          callbacks!.onDone?.();
+          return;
         }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
@@ -808,6 +829,13 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
         // 上游网关故障：不锁定模型，继续故障转移
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
+        }
+        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
+        if (isRetryableError(err)) {
+          if (idx < ordered.length) continue;
+          callbacks.onError?.(new Error('所有可用模型均失败'));
+          callbacks.onDone?.();
+          return;
         }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
