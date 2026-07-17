@@ -74,12 +74,14 @@ services:
     container_name: ai-manager
     ports:
       - "11888:11888"
+    environment:
+      - PORT=11888
     command: >
-      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && npx pm2-runtime start ecosystem.config.js"
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && node dist/app.js"
     restart: unless-stopped
 ```
 
-> Uses `pm2-runtime` instead of `ai-server start` to keep the process running in the foreground, preventing unexpected container exits.
+> Uses `node dist/app.js` directly, no PM2 needed — simpler and more stable for container deployment.
 
 ## 📖 Usage
 
