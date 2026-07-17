@@ -31,7 +31,7 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 ### Install
 
 ```bash
-npm install -g ai-models-manager
+npm install -g ai-models-manager --verbose
 ```
 
 ### Start Service
@@ -111,6 +111,8 @@ services:
     container_name: ai-manager
     ports:
       - "11888:11888"
+    volumes:
+      - ./data/models-manager:/root/.models-manager
     environment:
       - PORT=11888
     command: >

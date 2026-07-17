@@ -31,7 +31,7 @@
 ### 安装
 
 ```bash
-npm install -g ai-models-manager
+npm install -g ai-models-manager --verbose
 ```
 
 ### 启动服务
@@ -111,6 +111,8 @@ services:
     container_name: ai-manager
     ports:
       - "11888:11888"
+    volumes:
+      - ./data/models-manager:/root/.models-manager
     environment:
       - PORT=11888
     command: >

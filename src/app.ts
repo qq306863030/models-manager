@@ -13,10 +13,11 @@ import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
 import mcpRecordsRouter from './routes/mcpRecords';
 import { errorBroadcaster } from './utils/errorBroadcaster';
+import os from 'os';
 
 // ========== 日志文件重定向 ==========
 // PM2 不支持动态日期文件名，在应用层重定向 stdout/stderr 到日期文件
-const logDir = path.resolve(__dirname, '../logs');
+const logDir = path.join(os.homedir(), '.models-manager', 'logs');
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
 function getDateStr(): string {

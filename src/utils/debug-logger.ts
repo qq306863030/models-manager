@@ -7,7 +7,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
+/** 统一日志目录 */
+function getLogDir(): string {
+  return path.join(os.homedir(), '.models-manager', 'logs');
+}
 // 动态导入 dayjs（未在 package.json 中声明，作为 transitive dep 存在）
 let dayjs: any = null;
 try {
@@ -81,7 +86,7 @@ export function flushLog(buffer: RequestLogBuffer): void {
   buffer.flushed = true;
 
   try {
-    const logDir = path.resolve(process.cwd(), 'logs');
+    const logDir = getLogDir();
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
@@ -117,7 +122,7 @@ export function writeDebugLog(
   data: unknown,
 ): void {
   try {
-    const logDir = path.resolve(process.cwd(), 'logs');
+    const logDir = getLogDir();
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }

@@ -5,7 +5,7 @@ services:
     ports:
       - "11888:11888"
     volumes:
-      - /roman/models-manager:/root/.models-manager
+      - /data/models-manager:/root/.models-manager
     environment:
       - PORT=11888
     command: >
