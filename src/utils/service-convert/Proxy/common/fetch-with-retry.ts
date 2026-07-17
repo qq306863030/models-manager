@@ -4,10 +4,29 @@
  * 遇到 50x 上游错误或请求超时（Abort/Timeout/ECONNRESET 等）时，
  * 自动每隔 intervalMs 重试，最多 maxRetries 次。
  * 4xx 等客户端错误不会重试。
+ *
+ * 支持通过数据库配置的上游代理 PROXY_URL 转发请求。
  */
+
+import { ProxyAgent } from 'undici';
+import { PROXY_URL } from '../../../model-provider';
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_INTERVAL_MS = 500;
+
+/** 启动时从数据库读取代理配置，有值则创建 ProxyAgent，否则为 undefined */
+const proxyDispatcher: ProxyAgent | undefined = (() => {
+  if (PROXY_URL) {
+    console.log(`[fetchWithRetry] 已配置上游代理: ${PROXY_URL}`);
+    try {
+      return new ProxyAgent(PROXY_URL);
+    } catch (err) {
+      console.error(`[fetchWithRetry] 代理初始化失败: ${PROXY_URL}`, err);
+      return undefined;
+    }
+  }
+  return undefined;
+})();
 
 /** 判断错误是否可重试（50x 上游错误、请求超时、上游网关故障、空响应） */
 export function isRetryableError(err: unknown): boolean {
@@ -78,6 +97,7 @@ export async function fetchWithRetry(
       const response = await fetch(endpoint, {
         ...fetchOptions,
         signal: controller.signal,
+        ...(proxyDispatcher ? { dispatcher: proxyDispatcher as any } : {}),
       });
 
       clearTimeout(timeoutId);

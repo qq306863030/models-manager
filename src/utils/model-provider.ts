@@ -77,6 +77,7 @@ export interface UserSettings {
   max_content_length: number;
   max_token: number;
   lock_duration?: number;
+  proxy_url?: string;
 }
 
 export interface ChatCallParams {
@@ -92,7 +93,7 @@ export interface ChatCallParams {
 // ========== 常量 ==========
 
 export const MAX_RESPONSE_TOKENS = 64000;
-export const REQUEST_TIMEOUT_MS = 30000;
+export const REQUEST_TIMEOUT_MS = 10000;
 
 export const API_FORMAT = {
   OPENAI_CHAT: 1,
@@ -106,6 +107,16 @@ export const LOCK_DURATION_MS = (() => {
     return ((settings as any)?.lock_duration || 600) * 1000;
   } catch {
     return 600 * 1000;
+  }
+})();
+
+/** 上游代理 URL，从数据库读取，空则不使用代理，重启后生效 */
+export const PROXY_URL: string = (() => {
+  try {
+    const settings = getDbUserSettings() as UserSettings | undefined;
+    return (settings as any)?.proxy_url || '';
+  } catch {
+    return '';
   }
 })();
 

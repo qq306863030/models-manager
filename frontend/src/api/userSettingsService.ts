@@ -4,6 +4,8 @@ export interface UserSettings {
   max_content_length: number;
   max_token: number;
   lock_duration: number;
+  /** 上游代理地址（空则不使用代理） */
+  proxy_url?: string;
   /** 用户自定义 API Key（可选，部分场景使用） */
   api_key?: string;
   /** 代理端点列表（可选，部分场景使用） */

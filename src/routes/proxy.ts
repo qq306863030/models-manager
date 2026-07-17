@@ -305,7 +305,7 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
 async function handleChatCompletions(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
-  const isStream = body.stream === true;
+  const isStream = body.stream !== false;
 
   // 统一请求日志（所有路径：流式/非流式均记录）
   writeDebugLog(requestModelName, 'request', {
@@ -582,7 +582,7 @@ function toProviderType(type: string): ProviderType {
 async function handleResponses(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
-  const isStream = body.stream === true;
+  const isStream = body.stream !== false;
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
@@ -729,8 +729,8 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
 
-  // 判断是否为流式请求
-  const isStream = body.stream === true;
+  // 判断是否为流式请求（默认开启流式）
+  const isStream = body.stream !== false;
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {

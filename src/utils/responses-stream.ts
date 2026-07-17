@@ -25,8 +25,12 @@
 
 import { Response } from 'express';
 import OpenAI from 'openai';
-import { generateRandomString, REQUEST_TIMEOUT_MS } from './model-provider';
+import { generateRandomString, REQUEST_TIMEOUT_MS, PROXY_URL } from './model-provider';
 import { trackTokenUsage, trackApiCall } from './tokenTracker';
+import { ProxyAgent } from 'undici';
+
+/** 上游代理 dispatcher，从数据库读取，空则不使用代理 */
+const proxyDispatcher: any = PROXY_URL ? new ProxyAgent(PROXY_URL) : undefined;
 
 // ========== 类型定义 ==========
 
@@ -482,6 +486,7 @@ export async function processResponsesFetchStream(
       },
       body: JSON.stringify({ ...requestBody, stream: true }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}),
     });
 
     if (!upstreamResponse.ok) {
@@ -670,6 +675,7 @@ async function fallbackToNonStream(
     },
     body: JSON.stringify({ ...requestBody, stream: false }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}),
   });
 
   if (!response.ok) {

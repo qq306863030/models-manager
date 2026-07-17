@@ -16,7 +16,7 @@ router.get('/', (_req: Request, res: Response) => {
 // 更新设置
 router.put('/', (req: Request, res: Response) => {
   try {
-    const { max_content_length, max_token, lock_duration } = req.body;
+    const { max_content_length, max_token, lock_duration, proxy_url } = req.body;
 
     if (typeof max_content_length !== 'number' || typeof max_token !== 'number' || typeof lock_duration !== 'number') {
       res.status(400).json({ success: false, message: 'max_content_length、max_token 和 lock_duration 必须是数字' });
@@ -28,7 +28,7 @@ router.put('/', (req: Request, res: Response) => {
       return;
     }
 
-    saveUserSettings(max_content_length, max_token, lock_duration);
+    saveUserSettings(max_content_length, max_token, lock_duration, proxy_url);
 
     res.json({ success: true, message: '设置更新成功' });
   } catch (error) {

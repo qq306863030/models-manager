@@ -34,10 +34,17 @@
           controls-position="right"
           style="width: 100%" />
       </el-form-item>
+      <el-form-item label="上游代理">
+        <el-input
+          v-model="formData.proxy_url"
+          placeholder="如: http://127.0.0.1:7890"
+          clearable
+          style="width: 100%" />
+      </el-form-item>
       <el-form-item class="shuoming">
         <div class="settings-hint">
           <el-icon><InfoFilled /></el-icon>
-          <span>设置说明：值为 0 时，各模型使用自身的配置数值；值大于 0 时，所有模型将统一使用此处设置的数值。</span>
+          <span>设置说明：值为 0 时，各模型使用自身的配置数值；值大于 0 时，所有模型将统一使用此处设置的数值。代理配置需重启服务后生效。</span>
         </div>
       </el-form-item>
     </el-form>
@@ -68,6 +75,7 @@ const formData = reactive<UserSettings>({
   max_content_length: 0,
   max_token: 0,
   lock_duration: 600,
+  proxy_url: '',
 })
 
 // 加载设置
@@ -78,6 +86,7 @@ const loadSettings = async () => {
       formData.max_content_length = res.data.max_content_length
       formData.max_token = res.data.max_token
       formData.lock_duration = res.data.lock_duration || 600
+      formData.proxy_url = res.data.proxy_url || ''
     }
   } catch (e) {
     // ignore
@@ -108,9 +117,10 @@ const handleSubmit = async () => {
       max_content_length: formData.max_content_length,
       max_token: formData.max_token,
       lock_duration: formData.lock_duration,
+      proxy_url: formData.proxy_url || '',
     })
     if (res.success) {
-      ElMessage.success('设置已保存')
+      ElMessage.success('设置已保存，重启服务后生效')
       dialogVisible.value = false
     }
   } finally {
