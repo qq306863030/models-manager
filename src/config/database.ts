@@ -3,14 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
-// 优先使用当前工作目录，兼容全局安装和本地开发
+// 数据库存放于 ~/.models-manager
 const getDataDir = () => {
-  const cwdDataDir = path.join(process.cwd(), 'data');
-  if (fs.existsSync(cwdDataDir) || fs.mkdirSync(cwdDataDir, { recursive: true })) {
-    return cwdDataDir;
-  }
-  // 回退到用户目录
-  return path.join(os.homedir(), '.ai-models-manager', 'data');
+  const dir = path.join(os.homedir(), '.models-manager');
+  return dir;
 };
 
 const dbPath = path.join(getDataDir(), 'database.db');
