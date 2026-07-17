@@ -124,38 +124,42 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
             return;
           }
 
-          // SSE 响应 → clone 后读取整个响应写入内存
+          // SSE 响应 → 只读取前几块确认有 choices 就立即退出，不阻塞流式输出
           if (!fetchResponse.body) throw new Error('Response contained no choices (no body)');
           const cloned = fetchResponse.clone();
           const fullReader = cloned.body!.getReader();
-          let fullText = '';
-          while (true) {
+          const decoder = new TextDecoder();
+          let sseBuf = '';
+          let hasChoices = false;
+          let maxScanChunks = 20; // 最多扫描 20 块，避免无限读取
+          while (maxScanChunks-- > 0) {
             const { done, value } = await fullReader.read();
             if (done) break;
-            fullText += new TextDecoder().decode(value, { stream: true });
-          }
-          appendToLog(logBuffer, 'upstream', fullText, 10000);
-
-          // 从完整响应中检查是否有 choices
-          const allLines = fullText.split('\n');
-          let hasChoices = false;
-          for (const line of allLines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
-              const jsonStr = trimmed.slice(5).trim();
-              if (!jsonStr) continue;
-              try {
-                const chunk = JSON.parse(jsonStr) as Record<string, unknown>;
-                const choices = chunk.choices;
-                if (Array.isArray(choices) && choices.length > 0) {
-                  hasChoices = true;
-                  break;
-                }
-              } catch { /* 跳过 */ }
+            sseBuf += decoder.decode(value, { stream: true });
+            // 从累积的缓冲区中检查是否有 choices
+            const lines = sseBuf.split('\n');
+            sseBuf = lines.pop() || '';
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
+                const jsonStr = trimmed.slice(5).trim();
+                if (!jsonStr) continue;
+                try {
+                  const chunk = JSON.parse(jsonStr) as Record<string, unknown>;
+                  const choices = chunk.choices;
+                  if (Array.isArray(choices) && choices.length > 0) {
+                    hasChoices = true;
+                    break;
+                  }
+                } catch { /* 跳过 */ }
+              }
             }
+            if (hasChoices) break;
           }
+          // 取消 clone 读取（释放 body，原 response 不受影响）
+          fullReader.cancel().catch(() => {});
           if (!hasChoices) {
-            appendToLog(logBuffer, 'validate', { status: fetchResponse.status, contentType, result: 'no choices' });
+            appendToLog(logBuffer, 'validate', { status: fetchResponse.status, contentType, result: 'no choices', scannedUpTo: sseBuf.slice(0, 500) });
             throw new Error('Response contained no choices');
           }
         },

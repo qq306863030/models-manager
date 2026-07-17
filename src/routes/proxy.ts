@@ -413,7 +413,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           apiKey: model.api_key,
           modelId: model.id,
           providerLabel: `Chat→${providerType}`,
-          timeoutMs: REQUEST_TIMEOUT_MS,
+          // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks, res);
 
         trackApiCall(model.id);
@@ -679,7 +679,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           baseUrl: baseURL,
           apiKey: model.api_key,
           providerLabel: `Responses→${providerType}`,
-          timeoutMs: REQUEST_TIMEOUT_MS,
+          // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 
         trackApiCall(model.id);
@@ -787,7 +787,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
           baseUrl: baseURL,
           apiKey: model.api_key,
           providerLabel: `Anthropic→${providerType}`,
-          timeoutMs: REQUEST_TIMEOUT_MS,
+          // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 
         trackApiCall(model.id);

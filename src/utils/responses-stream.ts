@@ -485,7 +485,7 @@ export async function processResponsesFetchStream(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ ...requestBody, stream: true }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // 流式请求不设超时，防止生成中途被断开
       ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}),
     });
 

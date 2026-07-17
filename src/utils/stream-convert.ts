@@ -431,7 +431,7 @@ export async function processAnthropicStream(
       temperature: params.temperature,
       tools: params.tools ? convertToAnthropicTools(params.tools as unknown as any[]) : undefined,
     },
-    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    // 流式请求不设超时，防止生成中途被断开
   );
 
   const converter = new AnthropicStreamConverter(provider.modelName);
@@ -557,7 +557,7 @@ export async function processOpenAIResponsesStream(
       tools: tools as unknown as any,
       stream: true,
     },
-    { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    // 流式请求不设超时，防止生成中途被断开
   );
 
   const responseId = `resp_${generateRandomString(12)}`;
