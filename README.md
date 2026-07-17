@@ -52,37 +52,6 @@ ai-server start
 
 > 首次登录后请及时修改密码！
 
-### Docker 部署
-
-```bash
-# 1. 创建 docker-compose.yml 文件（内容见下方）
-# 2. 启动容器
-docker compose up -d
-
-# 3. 查看日志
-docker compose logs -f
-
-# 4. 停止容器
-docker compose down
-```
-
-```yaml
-# docker-compose.yml
-services:
-  ai-manager:
-    image: node:24
-    container_name: ai-manager
-    ports:
-      - "11888:11888"
-    environment:
-      - PORT=11888
-    command: >
-      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && node dist/app.js"
-    restart: unless-stopped
-```
-
-> 直接使用 `node dist/app.js` 启动，无需 PM2，容器进程更稳定简洁。
-
 ## 📖 使用方法
 
 ### CLI 命令
@@ -119,6 +88,37 @@ ai-server clear     # 停止并删除 pm2 中的服务
 - **锁定按钮**（🔒）：手动锁定模型，锁定期间该模型不会被调用。再次点击可解除锁定
 - **禁用按钮**（⛔）：禁用模型，被禁用的模型完全不会参与调用，也不会显示在模型列表中
 - **拖拽排序**：在模型列表中拖拽卡片可调整调用顺序，排在上面的模型优先级更高
+
+### 🐳 Docker 部署
+
+```bash
+# 1. 创建 docker-compose.yml 文件（内容见下方）
+# 2. 启动容器
+docker compose up -d
+
+# 3. 查看日志
+docker compose logs -f
+
+# 4. 停止容器
+docker compose down
+```
+
+```yaml
+# docker-compose.yml
+services:
+  ai-manager:
+    image: node:24
+    container_name: ai-manager
+    ports:
+      - "11888:11888"
+    environment:
+      - PORT=11888
+    command: >
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && node dist/app.js"
+    restart: unless-stopped
+```
+
+> 直接使用 `node dist/app.js` 启动，无需 PM2，容器进程更稳定简洁。
 
 ## 🌐 代理接口
 

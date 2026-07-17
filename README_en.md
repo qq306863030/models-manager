@@ -52,37 +52,6 @@ ai-server start
 
 > Please change the password after first login!
 
-### Docker Deployment
-
-```bash
-# 1. Create docker-compose.yml (see content below)
-# 2. Start the container
-docker compose up -d
-
-# 3. View logs
-docker compose logs -f
-
-# 4. Stop the container
-docker compose down
-```
-
-```yaml
-# docker-compose.yml
-services:
-  ai-manager:
-    image: node:24
-    container_name: ai-manager
-    ports:
-      - "11888:11888"
-    environment:
-      - PORT=11888
-    command: >
-      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && node dist/app.js"
-    restart: unless-stopped
-```
-
-> Uses `node dist/app.js` directly, no PM2 needed — simpler and more stable for container deployment.
-
 ## 📖 Usage
 
 ### CLI Commands
@@ -119,6 +88,37 @@ ai-server clear     # Stop and remove the server from pm2
 - **Lock Button** (🔒): Manually lock a model. Locked models will not be called. Click again to unlock
 - **Disable Button** (⛔): Disable a model. Disabled models will not participate in any calls and will not appear in the model list
 - **Drag-and-Drop Sorting**: Drag cards in the model list to adjust call order, models higher up have higher priority
+
+### 🐳 Docker Deployment
+
+```bash
+# 1. Create docker-compose.yml (see content below)
+# 2. Start the container
+docker compose up -d
+
+# 3. View logs
+docker compose logs -f
+
+# 4. Stop the container
+docker compose down
+```
+
+```yaml
+# docker-compose.yml
+services:
+  ai-manager:
+    image: node:24
+    container_name: ai-manager
+    ports:
+      - "11888:11888"
+    environment:
+      - PORT=11888
+    command: >
+      sh -c "npm install ai-models-manager -g && cd /usr/local/lib/node_modules/ai-models-manager && node dist/app.js"
+    restart: unless-stopped
+```
+
+> Uses `node dist/app.js` directly, no PM2 needed — simpler and more stable for container deployment.
 
 ## 🌐 Proxy Interfaces
 
