@@ -13,7 +13,7 @@
 import BaseProxy from './common/BaseProxy';
 import type { AnthropicProxyInput, AnthropicRequestBody, SSECallbacks } from './common/types';
 import { fetchWithRetry } from './common/fetch-with-retry';
-import { streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, streamWithRetry } from './common/sse-utils';
 
 export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void, AnthropicRequestBody> {
   private callbacks?: SSECallbacks;
@@ -61,6 +61,7 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
     endpoint: string,
   ): Promise<void> {
     const providerLabel = input.config.providerLabel || 'Anthropic';
+    let currentBody: AnthropicRequestBody = body;
 
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
@@ -70,14 +71,20 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
           'x-api-key': input.config.apiKey,
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(currentBody),
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
       (reader, cbs) => this.parseAnthropicStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

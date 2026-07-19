@@ -8,7 +8,7 @@
 
 import BaseProxy from './common/BaseProxy';
 import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
-import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 
 export default class ChatCompletionsToResponsesProxy extends BaseProxy<ChatCompletionsProxyInput, void, Record<string, unknown>> {
@@ -50,19 +50,26 @@ export default class ChatCompletionsToResponsesProxy extends BaseProxy<ChatCompl
 
   protected async proxy(input: ChatCompletionsProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
     const providerLabel = input.config.providerLabel || 'ChatToResponses';
+    let currentBody: Record<string, unknown> = body;
 
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
-        body: JSON.stringify(body),
+        body: JSON.stringify(currentBody),
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
       (reader, cbs) => parseChatCompletionsStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

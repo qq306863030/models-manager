@@ -18,7 +18,7 @@ import type {
   ChatCompletionsRequestBody,
   SSECallbacks,
 } from './common/types';
-import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 
 // ========== 默认值 ==========
@@ -97,6 +97,7 @@ export default class ChatCompletionsProxy extends BaseProxy<ChatCompletionsProxy
   ): Promise<void> {
     const providerLabel = input.config.providerLabel || DEFAULT_PROVIDER_LABEL;
 
+    let currentBody: ChatCompletionsRequestBody = body;
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
         method: 'POST',
@@ -104,14 +105,20 @@ export default class ChatCompletionsProxy extends BaseProxy<ChatCompletionsProxy
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${input.config.apiKey}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(currentBody),
         timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
       (reader, cbs) => parseChatCompletionsStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

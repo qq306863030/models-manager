@@ -441,6 +441,68 @@ export interface StreamRetryOptions {
   providerLabel?: string;
   /** 重试间隔毫秒数（默认 800） */
   retryIntervalMs?: number;
+  /** 当流中断并准备重试时，附带本次已经输出的内容文本 */
+  onRetry?: (context: { attempt: number; emittedText: string }) => Promise<void> | void;
+}
+
+/**
+ * 将已输出的 assistant 文本追加到下次重试请求中，避免流断开后上下文丢失。
+ */
+export function appendPartialAssistantContent<T extends Record<string, unknown>>(payload: T, partialText: string): T {
+  const text = partialText?.trim();
+  if (!text) return payload;
+
+  const nextPayload = JSON.parse(JSON.stringify(payload)) as T;
+
+  const messages = (nextPayload as Record<string, unknown>).messages;
+  if (Array.isArray(messages)) {
+    const nextMessages = messages as Array<Record<string, unknown>>;
+    const lastMessage = nextMessages[nextMessages.length - 1] as Record<string, unknown> | undefined;
+    if (!lastMessage) return nextPayload;
+    const lastRole = typeof lastMessage.role === 'string' ? lastMessage.role : '';
+
+    if (lastRole === 'assistant') {
+      const currentContent = lastMessage.content;
+      if (typeof currentContent === 'string') {
+        lastMessage.content = `${currentContent}${text}`;
+      } else if (Array.isArray(currentContent)) {
+        lastMessage.content = [
+          ...(currentContent as Array<Record<string, unknown>>),
+          { type: 'text', text },
+        ];
+      } else {
+        lastMessage.content = text;
+      }
+    } else {
+      nextMessages.push({ role: 'assistant', content: text });
+    }
+    return nextPayload;
+  }
+
+  const input = (nextPayload as Record<string, unknown>).input;
+  if (Array.isArray(input)) {
+    const nextInput = input as Array<Record<string, unknown>>;
+    const lastItem = nextInput[nextInput.length - 1] as Record<string, unknown> | undefined;
+    if (!lastItem) return nextPayload;
+    const lastRole = typeof lastItem.role === 'string' ? lastItem.role : '';
+
+    if (lastRole === 'assistant') {
+      const currentContent = lastItem.content;
+      if (Array.isArray(currentContent)) {
+        lastItem.content = [
+          ...(currentContent as Array<Record<string, unknown>>),
+          { type: 'output_text', text },
+        ];
+      } else {
+        lastItem.content = [{ type: 'output_text', text }];
+      }
+    } else {
+      nextInput.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] });
+    }
+    return nextPayload;
+  }
+
+  return payload;
 }
 
 /**
@@ -451,9 +513,7 @@ export interface StreamRetryOptions {
  *
  * 重试条件：
  * - 错误可重试（连接超时、50x、terminated、SocketError 等）
- * - 尚未向客户端发送任何内容（onContent/onThinking/onToolDelta/onToolCall 未被调用）
- *
- * 一旦已有内容发送给客户端，不再重试（避免客户端收到重复/断裂的内容）。
+ * - 如果本次流已经输出了内容，会把这些内容带到下一次重试请求中，尽量让上游继续生成剩余内容。
  *
  * @param fetcher  返回 Response 的函数（可使用 fetchWithRetry）
  * @param parser   流解析函数（如 parseChatCompletionsStream / parseResponsesStream）
@@ -471,16 +531,22 @@ export async function streamWithRetry(
   const retryIntervalMs = options?.retryIntervalMs ?? 800;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let hasEmittedContent = false;
+    let emittedTextSinceLastAttempt = '';
     let streamError: Error | null = null;
 
     // 包装回调，追踪是否已向客户端发送内容
     const trackingCallbacks: SSECallbacks = {
       ...callbacks,
-      onContent: (d) => { hasEmittedContent = true; callbacks.onContent?.(d); },
-      onThinking: (d) => { hasEmittedContent = true; callbacks.onThinking?.(d); },
-      onToolDelta: (d, info) => { hasEmittedContent = true; callbacks.onToolDelta?.(d, info); },
-      onToolCall: (t) => { hasEmittedContent = true; callbacks.onToolCall?.(t); },
+      onContent: (d) => {
+        emittedTextSinceLastAttempt += d;
+        callbacks.onContent?.(d);
+      },
+      onThinking: (d) => {
+        emittedTextSinceLastAttempt += d;
+        callbacks.onThinking?.(d);
+      },
+      onToolDelta: (d, info) => { callbacks.onToolDelta?.(d, info); },
+      onToolCall: (t) => { callbacks.onToolCall?.(t); },
       // 拦截 onError：解析器内部 catch 后不会 re-throw，需要在此捕获以便重试
       onError: (e) => { streamError = e; },
     };
@@ -527,15 +593,17 @@ export async function streamWithRetry(
 
       return; // 成功完成
     } catch (error) {
-      // 可重试：错误可重试 + 尚未向客户端发送任何内容
-      if (attempt < maxRetries && !hasEmittedContent && isRetryableError(error)) {
+      // 可重试：错误可重试即可重试，重试前把本次已输出内容附加到下次请求
+      if (attempt < maxRetries && isRetryableError(error)) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        console.warn(`[${providerLabel}] stream interrupted, retrying (${attempt + 1}/${maxRetries}): ${errMsg}`);
+        const emittedPreview = emittedTextSinceLastAttempt ? ` (replaying ${emittedTextSinceLastAttempt.length} chars)` : '';
+        console.warn(`[${providerLabel}] stream interrupted, retrying (${attempt + 1}/${maxRetries})${emittedPreview}: ${errMsg}`);
+        await options?.onRetry?.({ attempt: attempt + 1, emittedText: emittedTextSinceLastAttempt });
         callbacks.onConnectionStatus?.({
           state: 'error',
           attempt: attempt + 1,
           maxAttempts: maxRetries + 1,
-          message: `连接中断，正在重试 (${attempt + 1}/${maxRetries})...`,
+          message: `连接中断，正在重试并携带已输出内容 (${attempt + 1}/${maxRetries})...`,
         });
         await new Promise((r) => setTimeout(r, retryIntervalMs));
         continue;

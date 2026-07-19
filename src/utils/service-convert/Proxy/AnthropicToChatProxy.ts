@@ -12,7 +12,7 @@ import type { AnthropicProxyInput, SSECallbacks } from './common/types';
 import {
   anthropicRequestToChatRequest,
 } from './common/convert-utils';
-import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 
 export default class AnthropicToChatProxy extends BaseProxy<AnthropicProxyInput, void, Record<string, unknown>> {
@@ -59,19 +59,26 @@ export default class AnthropicToChatProxy extends BaseProxy<AnthropicProxyInput,
     const providerLabel = input.config.providerLabel || 'AnthropicToChat';
     body.stream = true;
     body.stream_options = { include_usage: true };
+    let currentBody: Record<string, unknown> = body;
 
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
-        body: JSON.stringify(body),
+        body: JSON.stringify(currentBody),
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
       (reader, cbs) => parseChatCompletionsStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

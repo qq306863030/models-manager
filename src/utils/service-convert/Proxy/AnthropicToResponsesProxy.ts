@@ -9,7 +9,7 @@
 import BaseProxy from './common/BaseProxy';
 import type { AnthropicProxyInput, SSECallbacks } from './common/types';
 import { anthropicRequestToChatRequest } from './common/convert-utils';
-import { parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, parseChatCompletionsStream, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 
 function logImageBlocks(prefix: string, messages: Array<Record<string, unknown>> | undefined): void {
@@ -121,12 +121,13 @@ export default class AnthropicToResponsesProxy extends BaseProxy<AnthropicProxyI
       console.log(`[AnthropicToResponses] messages_count=${body.messages.length} last_msg_role=${lastMsg?.role}`);
     }
 
+    let currentBody: Record<string, unknown> = body;
     await streamWithRetry(
       async () => {
         const response = await fetchWithRetry(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${input.config.apiKey}` },
-          body: JSON.stringify(body),
+          body: JSON.stringify(currentBody),
           timeoutMs: input.config.timeoutMs || 300_000,
           maxRetries: input.config.maxRetries ?? 2,
           providerLabel,
@@ -167,7 +168,13 @@ export default class AnthropicToResponsesProxy extends BaseProxy<AnthropicProxyI
         },
       }),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

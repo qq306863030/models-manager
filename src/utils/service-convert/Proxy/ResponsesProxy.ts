@@ -18,7 +18,7 @@ import type {
   ResponsesRequestBody,
   SSECallbacks,
 } from './common/types';
-import { parseResponsesStream, streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, parseResponsesStream, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 
 // ========== 默认值 ==========
@@ -128,8 +128,9 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
       return;
     }
 
-    // SSE 流 — 使用 streamWithRetry 支持流中断自动重试
+    // SSE 流 — 使用 streamWithRetry 支持流中断自动重试，并把已输出内容带入下一次请求
     let initialUsed = false;
+    let currentBody: ResponsesRequestBody = body;
     await streamWithRetry(
       async () => {
         if (!initialUsed) {
@@ -143,7 +144,7 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${input.config.apiKey}`,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(currentBody),
           timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
           maxRetries: 0, // 由 streamWithRetry 控制重试
           providerLabel,
@@ -151,7 +152,13 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
       },
       (reader, cbs) => parseResponsesStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 

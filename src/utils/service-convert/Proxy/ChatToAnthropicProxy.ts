@@ -7,7 +7,7 @@
 
 import BaseProxy from './common/BaseProxy';
 import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
-import { streamWithRetry } from './common/sse-utils';
+import { appendPartialAssistantContent, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 import { chatRequestToAnthropicRequest } from './common/convert-utils';
 
@@ -53,6 +53,7 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
 
   protected async proxy(input: ChatCompletionsProxyInput, body: Record<string, unknown>, endpoint: string): Promise<void> {
     const providerLabel = input.config.providerLabel || 'ChatToAnthropic';
+    let currentBody: Record<string, unknown> = body;
 
     await streamWithRetry(
       () => fetchWithRetry(endpoint, {
@@ -62,14 +63,20 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
           'x-api-key': input.config.apiKey,
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(currentBody),
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
       }),
       (reader, cbs) => this.parseAnthropicStream(reader, cbs),
       this.callbacks || {},
-      { maxRetries: input.config.maxRetries ?? 2, providerLabel },
+      {
+        maxRetries: input.config.maxRetries ?? 2,
+        providerLabel,
+        onRetry: ({ emittedText }) => {
+          currentBody = appendPartialAssistantContent(currentBody, emittedText);
+        },
+      },
     );
   }
 
