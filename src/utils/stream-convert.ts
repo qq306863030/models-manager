@@ -487,10 +487,8 @@ export async function processAnthropicStream(
     const errorType = err instanceof Error && err.name === 'TimeoutError' ? 'timeout_error' : 'anthropic_stream_error';
     console.error('[anthropic stream] fatal:', err);
     errorBroadcaster.emitError(options?.modelId ?? 0, provider.modelName, errorType, errMsg);
-    if (!res.writableEnded) {
-      try { writeSSE(res, { error: { message: errMsg, type: errorType } }); } catch { /* ignore */ }
-      res.end();
-    }
+    // 不结束响应，不吞掉异常 —— 让外层调用者（故障转移循环）处理
+    throw err;
   }
 }
 
