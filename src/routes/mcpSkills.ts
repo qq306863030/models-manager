@@ -79,6 +79,7 @@ function buildSkillsServer(userId: number): McpServer {
     'search_skills',
     {
       description:
+        '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"查询处置方案"、"从处置方案中搜索"等。】' +
         '【处置方案搜索】根据关键词在标题(description)和内容(content)中搜索处置方案记录。' +
         '返回匹配记录的 id 和标题(description)列表，不包含完整内容。' +
         '使用方法：模型应先调用此工具，根据用户问题在标题和内容中查找最相关的记录，' +
@@ -140,6 +141,7 @@ function buildSkillsServer(userId: number): McpServer {
     'get_skill_detail',
     {
       description:
+        '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"查看处置方案"、"处置方案详情"等。】' +
         '【处置方案详情】根据 id 获取处置方案记录的完整详情。' +
         '返回完整的标题(description)和内容(content)。' +
         '使用方法：先用 search_skills 搜索到目标记录的 id，再调用此工具查看完整内容。' +
@@ -203,6 +205,7 @@ function buildSkillsServer(userId: number): McpServer {
     'create_skill',
     {
       description:
+        '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"添加处置方案"、"新建处置方案"等。】' +
         '【新增处置方案】调用此工具保存解决方案，以便将来遇到类似问题时可以复用。' +
         '需要提供标题(description)和内容(content)。' +
         '注意：description 必须简洁，不超过50字；' +
@@ -258,6 +261,7 @@ function buildSkillsServer(userId: number): McpServer {
     'update_skill',
     {
       description:
+        '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"修改处置方案"、"更新处置方案"等。】' +
         '【修改处置方案】根据 id 修改处置方案记录，保存修改后的解决方案，以便将来遇到类似问题时可以复用。' +
         '只更新提供的字段，不传的字段保持不变。' +
         '注意：description 必须简洁，不超过50字；' +
@@ -318,6 +322,7 @@ function buildSkillsServer(userId: number): McpServer {
     'delete_skill',
     {
       description:
+        '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"删除处置方案"、"移除处置方案"等。】' +
         '【删除处置方案】根据 id 删除处置方案记录。' +
         '删除后不可恢复。' +
         '如果记录不存在或不属于当前用户，会返回错误。',

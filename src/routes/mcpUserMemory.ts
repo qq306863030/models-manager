@@ -104,6 +104,7 @@ function buildUserMemoryServer(userId: number): McpServer {
     'search_user_memories',
     {
       description:
+        '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"查询记忆"、"从记忆中搜索"等。】' +
         '【用户/AI 记忆搜索】根据类别关键词在标题(description)和内容(content)中搜索用户/AI 记忆记录。' +
         'description 是固定的类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
         '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
@@ -166,6 +167,7 @@ function buildUserMemoryServer(userId: number): McpServer {
     'get_user_memory_detail',
     {
       description:
+        '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"查看记忆详情"等。】' +
         '【用户/AI 记忆详情】根据 id 获取用户/AI 记忆记录的完整详情。' +
         '返回完整的 description（类别）和 content（内容）。' +
         '使用方法：先用 search_user_memories 搜索到目标记录的 id，再调用此工具查看完整内容。' +
@@ -229,6 +231,7 @@ function buildUserMemoryServer(userId: number): McpServer {
     'create_user_memory',
     {
       description:
+        '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"添加记忆"、"新建记忆"等。】' +
         '【新增用户/AI 记忆】调用此工具记录关于用户或 AI 自身的重要信息，以便将来对话中可以参考和复用。' +
         'description 必须是以下固定类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
         '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
@@ -290,6 +293,7 @@ function buildUserMemoryServer(userId: number): McpServer {
     'update_user_memory',
     {
       description:
+        '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"修改记忆"、"更新记忆"等。】' +
         '【修改用户/AI 记忆】根据 id 修改用户/AI 记忆记录，更新信息以便将来对话中可以参考和复用。' +
         'description 必须是以下固定类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
         '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
@@ -367,6 +371,7 @@ function buildUserMemoryServer(userId: number): McpServer {
     'delete_user_memory',
     {
       description:
+        '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"删除记忆"、"移除记忆"等。】' +
         '【删除用户/AI 记忆】根据 id 删除用户/AI 记忆记录。' +
         '删除后不可恢复。' +
         '如果记录不存在或不属于当前用户，会返回错误。',

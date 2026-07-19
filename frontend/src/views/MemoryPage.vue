@@ -123,6 +123,13 @@
           <strong>{{ isUser ? '模型记忆' : '处置方案' }}</strong>数据：
         </p>
         <el-alert
+          title="使用约定"
+          type="info"
+          :description="'AI 模型仅当用户明确提到「' + (isUser ? '记忆' : '处置方案') + '」文字时才会触发此 MCP 服务，例如「添加' + (isUser ? '记忆' : '处置方案') + '」「从' + (isUser ? '记忆中查询' : '处置方案中搜索') + '」等。'"
+          show-icon
+          closable
+          style="margin-bottom: 12px;" />
+        <el-alert
           v-if="mcpApiKey"
           title="已检测到 API Key"
           type="warning"

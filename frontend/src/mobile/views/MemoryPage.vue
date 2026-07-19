@@ -107,7 +107,12 @@
             在支持 MCP 的客户端中添加以下配置，即可通过 MCP 协议访问
             <strong>{{ isUser ? '模型记忆' : '处置方案' }}</strong>数据：
           </p>
-          <van-notice-bar v-if="mcpApiKey" text="已检测到 API Key，配置中已自动添加 Authorization 头。" color="#e6a23c" background="#fdf6ec" />
+          <van-notice-bar
+            text="使用约定：AI 模型仅当用户明确提到「记忆」或「处置方案」文字时才会触发此 MCP 服务，例如「添加记忆」「从处置方案中搜索」等。"
+            color="#409eff"
+            background="#ecf5ff"
+            style="margin-bottom: 8px;" />
+          <van-notice-bar v-if="mcpApiKey" text="已检测到 API Key，配置中已自动添加 Authorization 头。" color="#e6a23c" background="#fdf6ec" style="margin-bottom: 8px;" />
           <pre class="mcp-config-pre">{{ mcpConfigJson }}</pre>
         </div>
       </div>
