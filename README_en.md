@@ -122,6 +122,53 @@ services:
 
 > Uses `node dist/app.js` directly, no PM2 needed — simpler and more stable for container deployment.
 
+
+### 📋 Nginx Reverse Proxy Configuration (Recommended)
+
+In production environments, it's recommended to use **Nginx** as a reverse proxy for HTTPS, domain binding, and request body size limiting.
+
+```nginx
+# /etc/nginx/conf.d/ai-manager.conf
+server {
+    listen       80;
+    server_name your-domain.com;  # Replace with your domain
+
+    # Request body size limit (adjust as needed, default is 1M, recommend 1G or larger for large model deployment)
+    client_max_body_size 1G;
+
+    location / {
+        proxy_pass http://127.0.0.1:11888/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> **Note**: `client_max_body_size` limits the client request body size. If exceeded during deployment, Nginx returns a **413 Request Entity Too Large** error. Adjust according to your actual deployment file size.
+
+If running Nginx with Docker, mount the configuration file into the container:
+
+```yaml
+# docker-compose.nginx.yml example
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl  # HTTPS certificates (optional)
+    restart: unless-stopped
+```
+
+
 ## 🌐 Proxy Interfaces
 
 Click "View API" on the management page to see the full proxy addresses. Each user gets isolated endpoints (e.g. `{origin}/{username}/...`).

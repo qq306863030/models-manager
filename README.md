@@ -122,6 +122,53 @@ services:
 
 > 直接使用 `node dist/app.js` 启动，无需 PM2，容器进程更稳定简洁。
 
+
+### 📋 Nginx 反向代理配置（推荐）
+
+在生产环境中，建议使用 **Nginx** 作为反向代理，提供 HTTPS、域名绑定和请求体大小限制等功能。
+
+```nginx
+# /etc/nginx/conf.d/ai-manager.conf
+server {
+    listen       80;
+    server_name your-domain.com;  # 替换为你的域名
+
+    # 请求体大小限制（根据实际需要调整，默认 1M，大模型部署建议设为 1G 或更大）
+    client_max_body_size 1G;
+
+    location / {
+        proxy_pass http://127.0.0.1:11888/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> **注意**：`client_max_body_size` 用于限制客户端请求体大小。部署大模型文件时，如果超出该限制会返回 **413 Request Entity Too Large** 错误。请根据实际部署文件大小适当调整。
+
+如果使用 Docker 运行 Nginx，将上述配置文件挂载到容器内即可：
+
+```yaml
+# docker-compose.nginx.yml 示例
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl  # HTTPS 证书（可选）
+    restart: unless-stopped
+```
+
+
 ## 🌐 代理接口
 
 在管理页面点击「查看接口」可查看完整的代理地址，每个接口地址按用户名隔离（如 `{origin}/{username}/...`）。
