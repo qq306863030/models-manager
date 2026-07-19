@@ -133,6 +133,14 @@ app.get('/api/config', (req: Request, res: Response) => {
 // 确保 /v1/* 和 /api/tags|show|version 不被 SPA fallback 拦截
 app.use(proxyRouter);
 
+// 前端路由显式处理（放在 /:username 之前，避免被代理拦截）
+const publicPath = path.join(__dirname, 'public');
+const indexPath = path.join(publicPath, 'index.html');
+app.use('/login', (_req: Request, res: Response) => { res.sendFile(indexPath); });
+app.use('/change-password', (_req: Request, res: Response) => { res.sendFile(indexPath); });
+app.use('/user-manage', (_req: Request, res: Response) => { res.sendFile(indexPath); });
+app.use('/memory', (_req: Request, res: Response) => { res.sendFile(indexPath); });
+
 // 用户名前缀的代理路由：/:username/v1/* 和 /:username/api/*
 // 挂载到 /:username，Express 自动剥离 /:username 前缀，内部 router 收到 /v1/models
 app.use('/:username', userRouter);
@@ -144,7 +152,6 @@ app.use('/:username', mcpSkillsRouter);
 app.use('/:username', mcpUserMemoryRouter);
 
 // 生产环境：托管前端静态文件
-const publicPath = path.join(__dirname, 'public');
 app.use(express.static(publicPath));
 
 // 移动端静态文件（用于 /m/* 路由）
@@ -161,7 +168,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.path.startsWith('/m')) {
     return res.sendFile(mobilePath);
   }
-  res.sendFile(path.join(publicPath, 'index.html'));
+  res.sendFile(indexPath);
 });
 
 // 错误处理中间件

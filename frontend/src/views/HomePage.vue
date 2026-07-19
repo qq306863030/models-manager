@@ -4,25 +4,26 @@
     <el-header class="app-header">
       <div class="header-left">
         <h1 class="app-title">AI 模型管理平台</h1>
-        <el-menu
-          :default-active="'home'"
-          mode="horizontal"
-          :ellipsis="false"
-          class="header-nav-menu"
-          @select="handleNavSelect">
-          <el-menu-item index="home">
+        <div class="header-nav-links">
+          <el-button
+            :type="currentNav === 'home' ? 'primary' : 'text'"
+            @click="handleNavSelect('home')">
             <el-icon><Management /></el-icon>
             模型管理
-          </el-menu-item>
-          <el-menu-item index="memory-user">
+          </el-button>
+          <el-button
+            :type="currentNav === 'memory-user' ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-user')">
             <el-icon><Document /></el-icon>
             模型记忆
-          </el-menu-item>
-          <el-menu-item index="memory-skills">
+          </el-button>
+          <el-button
+            :type="currentNav === 'memory-skills' ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-skills')">
             <el-icon><Tools /></el-icon>
             处置方案
-          </el-menu-item>
-        </el-menu>
+          </el-button>
+        </div>
       </div>
       <div class="header-right">
         <!-- 用户管理入口（仅管理员显示） -->
@@ -350,8 +351,12 @@ const isIndeterminate = computed(() => {
   return len > 0 && len < modelList.value.length
 })
 
+// 当前导航
+const currentNav = ref('home');
+
 // 导航选择
 const handleNavSelect = (index: string) => {
+  currentNav.value = index;
   if (index === 'home') {
     router.push('/');
   } else if (index === 'memory-user') {
@@ -642,14 +647,14 @@ onUnmounted(() => {
       white-space: nowrap;
     }
 
-    .header-nav-menu {
-      border-bottom: none;
-      background: transparent;
+    .header-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
 
-      .el-menu-item {
-        height: 56px;
-        line-height: 56px;
-        font-size: 14px;
+      .el-button {
+        height: 32px;
+        --el-button-size: 32px;
       }
     }
   }

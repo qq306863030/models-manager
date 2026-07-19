@@ -48,6 +48,7 @@ const content = props.item.content;
   transition: box-shadow 0.2s;
   height: 100%;
   width: 100%;
+  max-height: 260px;
 
   &:hover {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
@@ -73,16 +74,18 @@ const content = props.item.content;
   white-space: nowrap;
   word-break: break-all;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .memory-content {
   font-size: 13px;
   color: #606266;
   line-height: 1.6;
-  flex: 1;
-  overflow-y: auto;
   word-break: break-all;
   width: 100%;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .memory-card-footer {
@@ -92,5 +95,6 @@ const content = props.item.content;
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid #f0f0f0;
+  flex-shrink: 0;
 }
 </style>

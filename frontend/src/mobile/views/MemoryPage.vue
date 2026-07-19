@@ -332,9 +332,12 @@ onMounted(() => {
   margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   width: 100%;
+  max-height: 220px;
 
   .card-body {
     width: 100%;
+    overflow-y: auto;
+    max-height: 140px;
 
     .card-title {
       font-size: 15px;

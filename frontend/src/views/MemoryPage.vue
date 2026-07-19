@@ -4,25 +4,26 @@
     <el-header class="app-header">
       <div class="header-left">
         <h1 class="app-title">AI 模型管理平台</h1>
-        <el-menu
-          :default-active="'memory-' + memoryType"
-          mode="horizontal"
-          :ellipsis="false"
-          class="header-nav-menu"
-          @select="handleNavSelect">
-          <el-menu-item index="home">
+        <div class="header-nav-links">
+          <el-button
+            :type="'home' === currentNav ? 'primary' : 'text'"
+            @click="handleNavSelect('home')">
             <el-icon><Management /></el-icon>
             模型管理
-          </el-menu-item>
-          <el-menu-item index="memory-user">
+          </el-button>
+          <el-button
+            :type="'memory-user' === currentNav ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-user')">
             <el-icon><Document /></el-icon>
             模型记忆
-          </el-menu-item>
-          <el-menu-item index="memory-skills">
+          </el-button>
+          <el-button
+            :type="'memory-skills' === currentNav ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-skills')">
             <el-icon><Tools /></el-icon>
             处置方案
-          </el-menu-item>
-        </el-menu>
+          </el-button>
+        </div>
       </div>
       <div class="header-right">
         <el-button text @click="$router.push('/change-password')">
@@ -155,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
@@ -173,6 +174,7 @@ const router = useRouter();
 
 const memoryType = computed(() => (route.params.type === 'skills' ? 'skills' : 'user'));
 const isUser = computed(() => memoryType.value === 'user');
+const currentNav = computed(() => 'memory-' + memoryType.value);
 
 const username = localStorage.getItem('auth_username') || '';
 const currentOrigin = window.location.origin;
@@ -260,6 +262,11 @@ const fetchList = async () => {
     loading.value = false;
   }
 };
+
+// 监听路由参数变化，切换 type 时重新获取数据
+watch(() => route.params.type, () => {
+  fetchList();
+});
 
 const handleDetail = (item: AgentMemoryItem) => {
   detailDialogRef.value?.openDialog(item);
@@ -373,14 +380,14 @@ onMounted(() => {
       white-space: nowrap;
     }
 
-    .header-nav-menu {
-      border-bottom: none;
-      background: transparent;
+    .header-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
 
-      .el-menu-item {
-        height: 56px;
-        line-height: 56px;
-        font-size: 14px;
+      .el-button {
+        height: 32px;
+        --el-button-size: 32px;
       }
     }
   }
