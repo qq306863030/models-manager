@@ -12,6 +12,9 @@ import llmModelsRouter from './routes/llmModels';
 import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
 import mcpRecordsRouter from './routes/mcpRecords';
+import agentMemoryRouter from './routes/agentMemory';
+import mcpSkillsRouter from './routes/mcpSkills';
+import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import { errorBroadcaster } from './utils/errorBroadcaster';
 import os from 'os';
 
@@ -118,6 +121,7 @@ app.use('/api/models', modelsRouter);
 app.use('/api/token-stats', tokenStatsRouter);
 app.use('/api/llm-models', llmModelsRouter);
 app.use('/api/mcp-records', mcpRecordsRouter);
+app.use('/api/agent-memory', agentMemoryRouter);
 
 // 服务端配置（供前端读取）
 app.get('/api/config', (req: Request, res: Response) => {
@@ -132,6 +136,12 @@ app.use(proxyRouter);
 // 用户名前缀的代理路由：/:username/v1/* 和 /:username/api/*
 // 挂载到 /:username，Express 自动剥离 /:username 前缀，内部 router 收到 /v1/models
 app.use('/:username', userRouter);
+
+// MCP Skills 服务：/:username/skills/mcp
+app.use('/:username', mcpSkillsRouter);
+
+// MCP User Memory 服务：/:username/memory/mcp
+app.use('/:username', mcpUserMemoryRouter);
 
 // 生产环境：托管前端静态文件
 const publicPath = path.join(__dirname, 'public');

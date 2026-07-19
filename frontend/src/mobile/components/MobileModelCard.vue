@@ -18,7 +18,7 @@
       </div>
       <div class="card-stats">
         <div class="stat-item"><span class="stat-value">{{ formatNumber(statSummary.todayToken) }}</span><span class="stat-label">今日消耗</span></div>
-        <div class="stat-item"><span class="stat-value">{{ formatNumber(statSummary.totalCallCount) }}</span><span class="stat-label">调用次数</span></div>
+        <div class="stat-item"><span class="stat-value">{{ formatNumber(statSummary.todayCallCount) }}</span><span class="stat-label">调用次数</span></div>
       </div>
     </div>
     <div class="card-right">
@@ -61,7 +61,7 @@ import type { Model, ModelForm } from '@/api/modelService';
 interface Props {
   model: Model;
   isSelected?: boolean;
-  statSummary?: { todayToken: number; totalToken: number; totalCallCount: number };
+  statSummary?: { todayToken: number; totalToken: number; totalCallCount: number; todayCallCount: number };
 }
 
 interface Emits {
@@ -77,7 +77,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   isSelected: false,
-  statSummary: () => ({ todayToken: 0, totalToken: 0, totalCallCount: 0 })
+  statSummary: () => ({ todayToken: 0, totalToken: 0, totalCallCount: 0, todayCallCount: 0 })
 });
 
 const emit = defineEmits<Emits>();

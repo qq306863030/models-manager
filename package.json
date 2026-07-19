@@ -48,13 +48,17 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
+    "@modelcontextprotocol/express": "^2.0.0-beta.4",
+    "@modelcontextprotocol/node": "^2.0.0-beta.4",
+    "@modelcontextprotocol/server": "^2.0.0-beta.4",
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
     "morgan": "^1.11.0",
     "openai": "^6.45.0",
     "pm2": "^7.0.1",
     "undici": "^7.28.0",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/axios": "^0.9.36",

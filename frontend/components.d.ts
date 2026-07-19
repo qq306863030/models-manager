@@ -17,6 +17,8 @@ declare module 'vue' {
     ImportConflictDialog: typeof import('./src/components/ImportConflictDialog/index.vue')['default']
     LoginDialog: typeof import('./src/components/LoginDialog/index.vue')['default']
     McpRecordDialog: typeof import('./src/components/McpRecordDialog/index.vue')['default']
+    MemoryCard: typeof import('./src/components/MemoryCard/index.vue')['default']
+    MemoryDetailDialog: typeof import('./src/components/MemoryDetailDialog/index.vue')['default']
     ModelCard: typeof import('./src/components/ModelCard/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

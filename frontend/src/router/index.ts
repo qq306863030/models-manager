@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/memory/:type',
+    name: 'Memory',
+    component: () => import('@/views/MemoryPage.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/',
     name: 'Home',
     component: () => import('@/views/HomePage.vue'),

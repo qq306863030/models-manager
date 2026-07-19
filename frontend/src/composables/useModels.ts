@@ -125,6 +125,7 @@ export interface ModelStatSummary {
   todayToken: number;
   totalToken: number;
   totalCallCount: number;
+  todayCallCount: number;
 }
 
 export const modelStatMap = computed(() => {
@@ -132,11 +133,14 @@ export const modelStatMap = computed(() => {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   for (const stat of allStats.value) {
-    if (!map.has(stat.model_id)) map.set(stat.model_id, { todayToken: 0, totalToken: 0, totalCallCount: 0 });
+    if (!map.has(stat.model_id)) map.set(stat.model_id, { todayToken: 0, totalToken: 0, totalCallCount: 0, todayCallCount: 0 });
     const e = map.get(stat.model_id)!;
     e.totalToken += stat.total_token;
     e.totalCallCount += stat.call_count;
-    if (stat.stat_date === today) e.todayToken += stat.total_token;
+    if (stat.stat_date === today) {
+      e.todayToken += stat.total_token;
+      e.todayCallCount += stat.call_count;
+    }
   }
   return map;
 });

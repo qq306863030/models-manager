@@ -3,6 +3,8 @@
     <div class="custom-navbar">
       <div class="navbar-title">AI模型管理</div>
       <div class="navbar-actions">
+        <van-button size="small" @click="router.push('/m/memory/user')">模型记忆</van-button>
+        <van-button size="small" @click="router.push('/m/memory/skills')">处置方案</van-button>
         <van-button type="primary" size="small" @click="openAddDialog">添加</van-button>
         <van-button size="small" @click="openApiDialog">接口</van-button>
         <van-button size="small" @click="settingsDialogVisible = true">设置</van-button>
@@ -168,6 +170,8 @@ const proxyEndpoints = [
   { method: 'POST', path: '/api/show',               desc: '获取模型详情（Ollama 兼容）' },
   { method: 'GET',  path: '/api/version',            desc: '版本信息' },
   { method: 'GET',  path: '/v1/test',                desc: '测试接口(支持model和content参数)' },
+  { method: 'POST', path: '/skills/mcp',             desc: 'MCP Skills 服务（处置方案 CRUD）' },
+  { method: 'POST', path: '/memory/mcp',         desc: 'MCP User Memory 服务（用户/AI 记忆管理）' },
 ];
 
 // 剪贴板复制

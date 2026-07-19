@@ -211,4 +211,79 @@ export function upsertMcpRecord(userId: number, content: string): void {
   }
 }
 
+// ========== Agent 记忆表 ==========
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_memory_user (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT,
+    content TEXT,
+    user_id INTEGER REFERENCES users(id)
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_memory_skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT,
+    content TEXT,
+    user_id INTEGER REFERENCES users(id)
+  )
+`);
+
+// 为已存在的表添加 user_id 列（兼容旧库）
+try { db.exec('ALTER TABLE agent_memory_user ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch (e) {}
+try { db.exec('ALTER TABLE agent_memory_skills ADD COLUMN user_id INTEGER REFERENCES users(id)'); } catch (e) {}
+
+// 将已有数据的 user_id 设为 1（admin 用户）
+try { db.prepare("UPDATE agent_memory_user SET user_id = 1 WHERE user_id IS NULL").run(); } catch (e) {}
+try { db.prepare("UPDATE agent_memory_skills SET user_id = 1 WHERE user_id IS NULL").run(); } catch (e) {}
+
+// ========== Agent Memory User CRUD ==========
+export function getAgentMemoryUserList(userId: number): { id: number; description: string | null; content: string | null }[] {
+  return db.prepare('SELECT id, description, content FROM agent_memory_user WHERE user_id = ? ORDER BY id').all(userId) as any[];
+}
+
+export function getAgentMemoryUserById(id: number, userId: number): { id: number; description: string | null; content: string | null } | null {
+  return db.prepare('SELECT id, description, content FROM agent_memory_user WHERE id = ? AND user_id = ?').get(id, userId) as any || null;
+}
+
+export function createAgentMemoryUser(description: string | null, content: string | null, userId: number): { id: number } {
+  const result = db.prepare('INSERT INTO agent_memory_user (description, content, user_id) VALUES (?, ?, ?)').run(description, content, userId);
+  return { id: result.lastInsertRowid as number };
+}
+
+export function updateAgentMemoryUser(id: number, description: string | null, content: string | null, userId: number): boolean {
+  const result = db.prepare('UPDATE agent_memory_user SET description = ?, content = ? WHERE id = ? AND user_id = ?').run(description, content, id, userId);
+  return result.changes > 0;
+}
+
+export function deleteAgentMemoryUser(id: number, userId: number): boolean {
+  const result = db.prepare('DELETE FROM agent_memory_user WHERE id = ? AND user_id = ?').run(id, userId);
+  return result.changes > 0;
+}
+
+// ========== Agent Memory Skills CRUD ==========
+export function getAgentMemorySkillsList(userId: number): { id: number; description: string | null; content: string | null }[] {
+  return db.prepare('SELECT id, description, content FROM agent_memory_skills WHERE user_id = ? ORDER BY id').all(userId) as any[];
+}
+
+export function getAgentMemorySkillsById(id: number, userId: number): { id: number; description: string | null; content: string | null } | null {
+  return db.prepare('SELECT id, description, content FROM agent_memory_skills WHERE id = ? AND user_id = ?').get(id, userId) as any || null;
+}
+
+export function createAgentMemorySkills(description: string | null, content: string | null, userId: number): { id: number } {
+  const result = db.prepare('INSERT INTO agent_memory_skills (description, content, user_id) VALUES (?, ?, ?)').run(description, content, userId);
+  return { id: result.lastInsertRowid as number };
+}
+
+export function updateAgentMemorySkills(id: number, description: string | null, content: string | null, userId: number): boolean {
+  const result = db.prepare('UPDATE agent_memory_skills SET description = ?, content = ? WHERE id = ? AND user_id = ?').run(description, content, id, userId);
+  return result.changes > 0;
+}
+
+export function deleteAgentMemorySkills(id: number, userId: number): boolean {
+  const result = db.prepare('DELETE FROM agent_memory_skills WHERE id = ? AND user_id = ?').run(id, userId);
+  return result.changes > 0;
+}
+
 export default db;

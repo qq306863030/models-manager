@@ -419,6 +419,8 @@ export const proxyEndpoints = [
   { method: 'GET',  path: '/api/version',            desc: '版本信息' },
   { method: 'GET',  path: '',            desc: 'Ollama 兼容地址' },
   { method: 'GET',  path: '/v1/test',                desc: '测试接口(支持model和content参数)' },
+  { method: 'POST', path: '/skills/mcp',             desc: 'MCP Skills 服务（处置方案 CRUD）' },
+  { method: 'POST', path: '/memory/mcp',         desc: 'MCP User Memory 服务（用户/AI 记忆管理）' },
 ]
 
 // 用户名前缀的代理地址

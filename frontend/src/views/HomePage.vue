@@ -4,6 +4,25 @@
     <el-header class="app-header">
       <div class="header-left">
         <h1 class="app-title">AI 模型管理平台</h1>
+        <el-menu
+          :default-active="'home'"
+          mode="horizontal"
+          :ellipsis="false"
+          class="header-nav-menu"
+          @select="handleNavSelect">
+          <el-menu-item index="home">
+            <el-icon><Management /></el-icon>
+            模型管理
+          </el-menu-item>
+          <el-menu-item index="memory-user">
+            <el-icon><Document /></el-icon>
+            模型记忆
+          </el-menu-item>
+          <el-menu-item index="memory-skills">
+            <el-icon><Tools /></el-icon>
+            处置方案
+          </el-menu-item>
+        </el-menu>
       </div>
       <div class="header-right">
         <!-- 用户管理入口（仅管理员显示） -->
@@ -248,7 +267,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -330,6 +349,17 @@ const isIndeterminate = computed(() => {
   const len = checkedModelIds.value.length
   return len > 0 && len < modelList.value.length
 })
+
+// 导航选择
+const handleNavSelect = (index: string) => {
+  if (index === 'home') {
+    router.push('/');
+  } else if (index === 'memory-user') {
+    router.push('/memory/user');
+  } else if (index === 'memory-skills') {
+    router.push('/memory/skills');
+  }
+};
 
 // 拖拽排序
 const onDragEnd = () => {
@@ -600,11 +630,27 @@ onUnmounted(() => {
   padding: 0 24px;
 
   .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+
     .app-title {
       font-size: 18px;
       font-weight: 600;
       color: #303133;
       margin: 0;
+      white-space: nowrap;
+    }
+
+    .header-nav-menu {
+      border-bottom: none;
+      background: transparent;
+
+      .el-menu-item {
+        height: 56px;
+        line-height: 56px;
+        font-size: 14px;
+      }
     }
   }
 

@@ -5,6 +5,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/m/login', name: 'MobileLogin', component: () => import('../views/LoginPage.vue'), meta: { requiresAuth: false } },
   { path: '/m/change-password', name: 'MobileChangePassword', component: () => import('../views/ChangePassword.vue'), meta: { requiresAuth: true } },
   { path: '/m/user-manage', name: 'MobileUserManage', component: () => import('../views/UserManage.vue'), meta: { requiresAuth: true } },
+  { path: '/m/memory/:type', name: 'MobileMemory', component: () => import('../views/MemoryPage.vue'), meta: { requiresAuth: true } },
   { path: '/m/', name: 'MobileHome', component: () => import('../views/HomePage.vue'), meta: { requiresAuth: true } },
   { path: '/m/:pathMatch(.*)*', redirect: '/m/' }
 ];
