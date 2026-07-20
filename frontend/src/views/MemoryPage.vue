@@ -383,11 +383,41 @@ onMounted(() => {
     .header-nav-links {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 2px;
 
       .el-button {
-        height: 32px;
-        --el-button-size: 32px;
+        height: 56px;
+        border: none;
+        border-radius: 0;
+        font-size: 14px;
+        padding: 0 16px;
+        transition: background 0.2s;
+
+        // 图标和文字间距 5px
+        .el-icon {
+          margin-right: 5px;
+        }
+
+        // 激活态：浅灰背景，正常字号
+        &.el-button--primary {
+          background: #f0f2f5;
+          color: #303133;
+          font-weight: 500;
+          --el-button-bg-color: #f0f2f5;
+          --el-button-border-color: transparent;
+          --el-button-hover-bg-color: #f0f2f5;
+          --el-button-hover-border-color: transparent;
+          --el-button-active-bg-color: #f0f2f5;
+          --el-button-active-border-color: transparent;
+        }
+
+        // 非激活态：透明背景
+        &.el-button--text {
+          color: #606266;
+          font-weight: 400;
+          --el-button-text-color: #606266;
+          --el-button-hover-text-color: #303133;
+        }
       }
     }
   }
