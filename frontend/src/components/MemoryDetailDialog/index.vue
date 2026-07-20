@@ -1,32 +1,30 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="记忆详情"
+    :title="dialogTitle"
     width="70vw"
     top="10vh"
     :close-on-click-modal="false"
     @close="handleClose">
     <div v-if="item" class="detail-container">
-      <div class="field-group">
-        <label class="field-label">标题（description）</label>
-        <div v-if="!isEditing" class="field-value">{{ item.description || '（无标题）' }}</div>
-        <el-input v-else v-model="editDescription" placeholder="输入标题" maxlength="500" />
+      <!-- 查看模式：标题直接显示在对话框标题栏 -->
+      <!-- 编辑模式：可编辑标题 -->
+      <div v-if="isEditing" class="edit-title-row">
+        <el-input v-model="editDescription" placeholder="输入标题" maxlength="500" />
       </div>
 
-      <div class="field-group">
-        <label class="field-label">内容（content）</label>
-        <!-- 查看模式：Markdown 渲染 -->
-        <div v-if="!isEditing" class="field-value markdown-body" v-html="renderedContent"></div>
-        <!-- 编辑模式：原始内容 textarea -->
-        <el-input
-          v-else
-          v-model="editContent"
-          type="textarea"
-          :rows="16"
-          placeholder="输入内容（Markdown 格式）"
-          maxlength="100000"
-          show-word-limit />
-      </div>
+      <!-- 查看模式：内容区域填满 -->
+      <div v-if="!isEditing" class="content-area markdown-body" v-html="renderedContent"></div>
+      <!-- 编辑模式：原始内容 textarea -->
+      <el-input
+        v-else
+        v-model="editContent"
+        type="textarea"
+        :rows="16"
+        placeholder="输入内容（Markdown 格式）"
+        maxlength="100000"
+        show-word-limit
+        class="edit-content-area" />
     </div>
 
     <template #footer>
@@ -80,6 +78,10 @@ const renderedContent = computed(() => {
   const content = item.value?.content;
   if (!content) return '<p style="color: #999;">（无内容）</p>';
   return md.render(content);
+});
+
+const dialogTitle = computed(() => {
+  return item.value?.description || '详情';
 });
 
 const openDialog = (data: AgentMemoryItem) => {
@@ -140,38 +142,37 @@ defineExpose({ openDialog });
 
 <style scoped lang="less">
 .detail-container {
-  .field-group {
-    margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 60vh;
 
-    .field-label {
-      display: block;
-      font-size: 13px;
-      color: #909399;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
+  .edit-title-row {
+    margin-bottom: 16px;
+  }
 
-    .field-value {
-      font-size: 14px;
-      color: #303133;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
+  .content-area {
+    flex: 1;
+    min-height: 0;
+  }
 
-    .content-value {
-      max-height: 300px;
-      overflow-y: auto;
-      background: #f5f7fa;
-      padding: 10px 12px;
-      border-radius: 4px;
+  .edit-content-area {
+    flex: 1;
+    min-height: 0;
+
+    :deep(textarea) {
+      height: 100% !important;
     }
   }
 }
 
+:deep(.el-dialog__body) {
+  padding: 20px 24px;
+  overflow: hidden;
+}
+
 /* Markdown 渲染样式 */
 .markdown-body {
-  max-height: 500px;
   overflow-y: auto;
   background: #fafafa;
   padding: 16px 20px;

@@ -51,12 +51,12 @@
           @click-left="addDialogVisible = false"
           @click-right="handleAddSubmit" />
         <van-cell-group inset style="margin-top: 12px;">
-          <van-field v-model="addForm.description" label="标题" placeholder="输入标题（description）" />
+          <van-field v-model="addForm.description" label="标题" placeholder="输入标题" />
           <van-field
             v-model="addForm.content"
             type="textarea"
             label="内容"
-            placeholder="输入内容（content）"
+            placeholder="输入内容"
             rows="6"
             autosize />
         </van-cell-group>

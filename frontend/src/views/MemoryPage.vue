@@ -75,14 +75,14 @@
           @close="resetAddForm">
           <el-form :model="addForm" label-width="100px">
             <el-form-item label="标题">
-              <el-input v-model="addForm.description" placeholder="输入标题（description）" maxlength="500" />
+              <el-input v-model="addForm.description" placeholder="输入标题" maxlength="500" />
             </el-form-item>
             <el-form-item label="内容">
               <el-input
                 v-model="addForm.content"
                 type="textarea"
                 :rows="8"
-                placeholder="输入内容（content）"
+                placeholder="输入内容"
                 maxlength="100000"
                 show-word-limit />
             </el-form-item>
