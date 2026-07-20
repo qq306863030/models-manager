@@ -5,11 +5,11 @@
  * 地址格式: POST /<username>/skills/mcp
  *
  * 工具列表:
- *   - search_skills     — 根据关键词在标题和内容中搜索，返回 id + description 列表
- *   - get_skill_detail  — 根据 id 获取完整标题和内容
- *   - create_skill      — 新增记录
- *   - update_skill      — 更新记录
- *   - delete_skill      — 删除记录
+ *   - ai_mm_search_skills     — 根据关键词在标题和内容中搜索，返回 id + description 列表
+ *   - ai_mm_get_skill_detail  — 根据 id 获取完整标题和内容
+ *   - ai_mm_create_skill      — 新增记录
+ *   - ai_mm_update_skill      — 更新记录
+ *   - ai_mm_delete_skill      — 删除记录
  *
  * API Key 鉴权：如果用户设置了 API Key，MCP 调用时必须传 Authorization: Bearer <Key>
  */
@@ -76,7 +76,7 @@ function buildSkillsServer(userId: number): McpServer {
 
   // -------- 工具1: search_skills --------
   server.registerTool(
-    'search_skills',
+    'ai_mm_search_skills',
     {
       description:
         '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"查询处置方案"、"从处置方案中搜索"等。】' +
@@ -138,7 +138,7 @@ function buildSkillsServer(userId: number): McpServer {
 
   // -------- 工具2: get_skill_detail --------
   server.registerTool(
-    'get_skill_detail',
+    'ai_mm_get_skill_detail',
     {
       description:
         '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"查看处置方案"、"处置方案详情"等。】' +
@@ -202,7 +202,7 @@ function buildSkillsServer(userId: number): McpServer {
 
   // -------- 工具3: create_skill --------
   server.registerTool(
-    'create_skill',
+    'ai_mm_create_skill',
     {
       description:
         '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"添加处置方案"、"新建处置方案"等。】' +
@@ -258,7 +258,7 @@ function buildSkillsServer(userId: number): McpServer {
 
   // -------- 工具4: update_skill --------
   server.registerTool(
-    'update_skill',
+    'ai_mm_update_skill',
     {
       description:
         '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"修改处置方案"、"更新处置方案"等。】' +
@@ -319,7 +319,7 @@ function buildSkillsServer(userId: number): McpServer {
 
   // -------- 工具5: delete_skill --------
   server.registerTool(
-    'delete_skill',
+    'ai_mm_delete_skill',
     {
       description:
         '【注意：仅当用户明确提到"处置方案"的文字时才调用此工具，例如"删除处置方案"、"移除处置方案"等。】' +

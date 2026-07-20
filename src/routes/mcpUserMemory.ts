@@ -14,11 +14,11 @@
  *   - "AI其他长期记忆"
  *
  * 工具列表:
- *   - search_user_memories   — 根据类别关键词搜索，返回 id + description 列表
- *   - get_user_memory_detail — 根据 id 获取完整详情
- *   - create_user_memory     — 新增记录
- *   - update_user_memory     — 更新记录
- *   - delete_user_memory     — 删除记录
+ *   - ai_mm_search_user_memories   — 根据类别关键词搜索，返回 id + description 列表
+ *   - ai_mm_get_user_memory_detail — 根据 id 获取完整详情
+ *   - ai_mm_create_user_memory     — 新增记录
+ *   - ai_mm_update_user_memory     — 更新记录
+ *   - ai_mm_delete_user_memory     — 删除记录
  *
  * API Key 鉴权：如果用户设置了 API Key，MCP 调用时必须传 Authorization: Bearer <Key>
  */
@@ -101,7 +101,7 @@ function buildUserMemoryServer(userId: number): McpServer {
 
   // -------- 工具1: search_user_memories --------
   server.registerTool(
-    'search_user_memories',
+    'ai_mm_search_user_memories',
     {
       description:
         '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"查询记忆"、"从记忆中搜索"等。】' +
@@ -164,7 +164,7 @@ function buildUserMemoryServer(userId: number): McpServer {
 
   // -------- 工具2: get_user_memory_detail --------
   server.registerTool(
-    'get_user_memory_detail',
+    'ai_mm_get_user_memory_detail',
     {
       description:
         '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"查看记忆详情"等。】' +
@@ -228,7 +228,7 @@ function buildUserMemoryServer(userId: number): McpServer {
 
   // -------- 工具3: create_user_memory --------
   server.registerTool(
-    'create_user_memory',
+    'ai_mm_create_user_memory',
     {
       description:
         '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"添加记忆"、"新建记忆"等。】' +
@@ -290,7 +290,7 @@ function buildUserMemoryServer(userId: number): McpServer {
 
   // -------- 工具4: update_user_memory --------
   server.registerTool(
-    'update_user_memory',
+    'ai_mm_update_user_memory',
     {
       description:
         '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"修改记忆"、"更新记忆"等。】' +
@@ -368,7 +368,7 @@ function buildUserMemoryServer(userId: number): McpServer {
 
   // -------- 工具5: delete_user_memory --------
   server.registerTool(
-    'delete_user_memory',
+    'ai_mm_delete_user_memory',
     {
       description:
         '【注意：仅当用户明确提到"记忆"的文字时才调用此工具，例如"删除记忆"、"移除记忆"等。】' +
