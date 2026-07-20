@@ -9,3 +9,4 @@ package-lock.json
 
 test/
 .playwright-mcp/
+release.config.cjs

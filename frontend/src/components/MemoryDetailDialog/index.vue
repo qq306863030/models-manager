@@ -2,7 +2,8 @@
   <el-dialog
     v-model="dialogVisible"
     title="记忆详情"
-    width="700px"
+    width="70vw"
+    top="10vh"
     :close-on-click-modal="false"
     @close="handleClose">
     <div v-if="item" class="detail-container">
