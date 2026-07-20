@@ -5,6 +5,7 @@
       <div class="navbar-actions">
         <van-button size="small" @click="router.push('/m/memory/user')">模型记忆</van-button>
         <van-button size="small" @click="router.push('/m/memory/skills')">处置方案</van-button>
+        <van-button size="small" @click="router.push('/m/memory/docs')">我的文档</van-button>
         <van-button type="primary" size="small" @click="openAddDialog">添加</van-button>
         <van-button size="small" @click="openApiDialog">接口</van-button>
         <van-button size="small" @click="settingsDialogVisible = true">设置</van-button>

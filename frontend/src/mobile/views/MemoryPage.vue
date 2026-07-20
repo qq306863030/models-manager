@@ -2,7 +2,7 @@
   <div class="mobile-memory-page">
     <!-- 顶部导航 -->
     <van-nav-bar
-      :title="isUser ? '模型记忆' : '处置方案'"
+      :title="sectionTitle"
       left-text="返回"
       left-arrow
       @click-left="goHome">
@@ -16,6 +16,7 @@
     <van-tabs v-model:active="activeTab" @change="onTabChange">
       <van-tab title="模型记忆" name="user" />
       <van-tab title="处置方案" name="skills" />
+      <van-tab title="我的文档" name="docs" />
     </van-tabs>
 
     <!-- 列表 -->
@@ -105,10 +106,10 @@
         <div class="mcp-config-body" style="padding: 12px 16px; overflow-y: auto; flex: 1;">
           <p style="font-size: 13px; color: #646566; line-height: 1.5; margin-bottom: 12px;">
             在支持 MCP 的客户端中添加以下配置，即可通过 MCP 协议访问
-            <strong>{{ isUser ? '模型记忆' : '处置方案' }}</strong>数据：
+            <strong>{{ sectionTitle }}</strong>数据：
           </p>
           <van-notice-bar
-            text="使用约定：AI 模型仅当用户明确提到「记忆」或「处置方案」文字时才会触发此 MCP 服务，例如「添加记忆」「从处置方案中搜索」等。"
+            :text="'使用约定：AI 模型仅当用户明确提到「' + sectionTitle + '」文字时才会触发此 MCP 服务，例如「添加' + sectionTitle + '」「从' + sectionTitle + '中查询」等。'"
             color="#409eff"
             background="#ecf5ff"
             style="margin-bottom: 8px;" />
@@ -135,7 +136,7 @@ import {
 const router = useRouter();
 const list = ref<AgentMemoryItem[]>([]);
 const refreshing = ref(false);
-const activeTab = ref<'user' | 'skills'>('user');
+const activeTab = ref<'user' | 'skills' | 'docs'>('user');
 const addDialogVisible = ref(false);
 const detailVisible = ref(false);
 const isEditing = ref(false);
@@ -145,15 +146,18 @@ const editForm = ref({ description: '', content: '' });
 const showMcpConfig = ref(false);
 
 const isUser = computed(() => activeTab.value === 'user');
+const isSkills = computed(() => activeTab.value === 'skills');
+const isDocs = computed(() => activeTab.value === 'docs');
+const sectionTitle = computed(() => isUser.value ? '模型记忆' : isSkills.value ? '处置方案' : '我的文档');
 const username = localStorage.getItem('auth_username') || '';
 const currentOrigin = window.location.origin;
 const mcpApiKey = computed(() => localStorage.getItem('custom_api_key') || '');
 
 const mcpConfigJson = computed(() => {
-  const key = activeTab.value;
-  const serverName = `ai-models-manager-${key === 'user' ? 'memory' : 'skills'}`;
-  const label = key === 'user' ? '模型记忆' : '处置方案';
-  const url = `${currentOrigin}/${username}/${key === 'user' ? 'memory' : 'skills'}/mcp`;
+  const key = isUser.value ? 'memory' : isSkills.value ? 'skills' : 'docs';
+  const serverName = `ai-models-manager-${key}`;
+  const label = sectionTitle.value;
+  const url = `${currentOrigin}/${username}/${key}/mcp`;
   const config: Record<string, any> = {
     mcpServers: {
       [serverName]: {

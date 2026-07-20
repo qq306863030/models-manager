@@ -15,6 +15,7 @@ import mcpRecordsRouter from './routes/mcpRecords';
 import agentMemoryRouter from './routes/agentMemory';
 import mcpSkillsRouter from './routes/mcpSkills';
 import mcpUserMemoryRouter from './routes/mcpUserMemory';
+import mcpUserDocumentRouter from './routes/mcpUserDocument';
 import { errorBroadcaster } from './utils/errorBroadcaster';
 import os from 'os';
 
@@ -150,6 +151,9 @@ app.use('/:username', mcpSkillsRouter);
 
 // MCP User Memory 服务：/:username/memory/mcp
 app.use('/:username', mcpUserMemoryRouter);
+
+// MCP User Document 服务：/:username/docs/mcp
+app.use('/:username', mcpUserDocumentRouter);
 
 // 生产环境：托管前端静态文件
 app.use(express.static(publicPath));

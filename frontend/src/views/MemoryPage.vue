@@ -23,6 +23,12 @@
             <el-icon><Tools /></el-icon>
             处置方案
           </el-button>
+          <el-button
+            :type="'memory-docs' === currentNav ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-docs')">
+            <el-icon><Reading /></el-icon>
+            我的文档
+          </el-button>
         </div>
       </div>
       <div class="header-right">
@@ -44,7 +50,7 @@
         <template #header>
           <div class="card-header">
             <div class="left">
-              <span class="section-title">{{ isUser ? '模型记忆' : '处置方案' }}列表</span>
+              <span class="section-title">{{ sectionTitle }}列表</span>
               <span class="item-count">共 {{ list.length }} 条</span>
             </div>
             <div class="right">
@@ -121,12 +127,12 @@
       <div class="mcp-config-body">
         <p class="mcp-config-desc">
           在支持 MCP 的客户端（如 Claude Desktop）中添加以下配置，即可通过 MCP 协议访问
-          <strong>{{ isUser ? '模型记忆' : '处置方案' }}</strong>数据：
+          <strong>{{ sectionTitle }}</strong>数据：
         </p>
         <el-alert
           title="使用约定"
           type="info"
-          :description="'AI 模型仅当用户明确提到「' + (isUser ? '记忆' : '处置方案') + '」文字时才会触发此 MCP 服务，例如「添加' + (isUser ? '记忆' : '处置方案') + '」「从' + (isUser ? '记忆中查询' : '处置方案中搜索') + '」等。'"
+          :description="'AI 模型仅当用户明确提到「' + sectionTitle + '」文字时才会触发此 MCP 服务，例如「添加' + sectionTitle + '」「从' + sectionTitle + '中查询」等。'"
           show-icon
           closable
           style="margin-bottom: 12px;" />
@@ -167,13 +173,21 @@ import {
 } from '@/api/agentMemoryService';
 import MemoryCard from '@/components/MemoryCard/index.vue';
 import MemoryDetailDialog from '@/components/MemoryDetailDialog/index.vue';
-import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument } from '@element-plus/icons-vue';
+import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument, Reading } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
 
-const memoryType = computed(() => (route.params.type === 'skills' ? 'skills' : 'user'));
+const memoryType = computed(() => {
+  const t = route.params.type as string;
+  if (t === 'skills') return 'skills';
+  if (t === 'docs') return 'docs';
+  return 'user';
+});
 const isUser = computed(() => memoryType.value === 'user');
+const isSkills = computed(() => memoryType.value === 'skills');
+const isDocs = computed(() => memoryType.value === 'docs');
+const sectionTitle = computed(() => isUser.value ? '模型记忆' : isSkills.value ? '处置方案' : '我的文档');
 const currentNav = computed(() => 'memory-' + memoryType.value);
 
 const username = localStorage.getItem('auth_username') || '';
@@ -183,9 +197,9 @@ const mcpApiKey = computed(() => localStorage.getItem('custom_api_key') || '');
 const showMcpConfig = ref(false);
 
 const mcpConfigJson = computed(() => {
-  const key = isUser.value ? 'memory' : 'skills';
+  const key = isUser.value ? 'memory' : isSkills.value ? 'skills' : 'docs';
   const serverName = `ai-models-manager-${key}`;
-  const label = isUser.value ? '模型记忆' : '处置方案';
+  const label = sectionTitle.value;
   const url = `${currentOrigin}/${username}/${key}/mcp`;
   const config: Record<string, any> = {
     mcpServers: {
@@ -246,6 +260,8 @@ const handleNavSelect = (index: string) => {
     router.push('/memory/user');
   } else if (index === 'memory-skills') {
     router.push('/memory/skills');
+  } else if (index === 'memory-docs') {
+    router.push('/memory/docs');
   }
 };
 

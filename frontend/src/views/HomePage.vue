@@ -23,6 +23,12 @@
             <el-icon><Tools /></el-icon>
             处置方案
           </el-button>
+          <el-button
+            :type="currentNav === 'memory-docs' ? 'primary' : 'text'"
+            @click="handleNavSelect('memory-docs')">
+            <el-icon><Reading /></el-icon>
+            我的文档
+          </el-button>
         </div>
       </div>
       <div class="header-right">
@@ -268,7 +274,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document, Reading } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -363,6 +369,8 @@ const handleNavSelect = (index: string) => {
     router.push('/memory/user');
   } else if (index === 'memory-skills') {
     router.push('/memory/skills');
+  } else if (index === 'memory-docs') {
+    router.push('/memory/docs');
   }
 };
 

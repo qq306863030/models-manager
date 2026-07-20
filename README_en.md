@@ -220,6 +220,7 @@ This tool provides **MCP Streamable HTTP** servers for **Model Memory** and **Sk
 |---------|----------|-------------|
 | Model Memory | `POST /{username}/memory/mcp` | Read/write user/AI memories |
 | Skills | `POST /{username}/skills/mcp` | Read/write solution recipes |
+| User Documents | `POST /{username}/docs/mcp` | Read/write user documents |
 
 > Endpoints are isolated by username. To enable API Key authentication, configure it on the management page via "View API".
 
@@ -238,6 +239,13 @@ This tool provides **MCP Streamable HTTP** servers for **Model Memory** and **Sk
     "ai-models-manager-skills": {
       "type": "http",
       "url": "http://localhost:11888/admin/skills/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    },
+    "ai-models-manager-docs": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/docs/mcp",
       "headers": {
         "Authorization": "Bearer your-api-key-here"
       }
@@ -263,6 +271,12 @@ Once configured, simply tell the AI in your conversation:
 
 **Search a skill**: "Have I recorded any method for handling Node memory leaks?"
 → AI searches and returns matching skills
+
+**Store a document**: "Save this API design document for me"
+→ AI saves the content as a user document for later reference
+
+**Search a document**: "Find the API design document I saved before"
+→ AI searches and returns matching user documents
 
 ## 📄 License
 

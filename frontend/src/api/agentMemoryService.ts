@@ -12,7 +12,7 @@ export interface AgentMemoryResponse {
   message?: string;
 }
 
-type MemoryType = 'user' | 'skills';
+type MemoryType = 'user' | 'skills' | 'docs';
 
 // 获取列表
 export const getMemoryList = (type: MemoryType) => {

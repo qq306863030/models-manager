@@ -220,6 +220,7 @@ services:
 |------|----------|------|
 | 模型记忆 | `POST /{username}/memory/mcp` | 读写用户/AI 记忆 |
 | 处置方案 | `POST /{username}/skills/mcp` | 读写处置方案（解决方案） |
+| 用户文档 | `POST /{username}/docs/mcp` | 读写用户文档 |
 
 > 端点按用户名隔离，如需 API Key 鉴权，请在管理页面「查看接口」中设置。
 
@@ -238,6 +239,13 @@ services:
     "ai-models-manager-skills": {
       "type": "http",
       "url": "http://localhost:11888/admin/skills/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    },
+    "ai-models-manager-docs": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/docs/mcp",
       "headers": {
         "Authorization": "Bearer your-api-key-here"
       }
@@ -263,6 +271,12 @@ services:
 
 **查询处置方案**：「之前记过 Node 内存泄漏的处理方法吗？」
 → AI 搜索并返回匹配的处置方案
+
+**存储文档**：「帮我记录一下这份 API 设计文档」
+→ AI 将内容保存为用户文档，方便随时查阅
+
+**查询文档**：「帮我查一下我之前记录的 API 设计文档」
+→ AI 搜索并返回匹配的用户文档
 
 ## 📄 License
 
