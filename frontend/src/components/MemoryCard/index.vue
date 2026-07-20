@@ -43,12 +43,14 @@ const content = props.item.content;
   border-radius: 8px;
   border: 1px solid #e4e7ed;
   padding: 16px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   transition: box-shadow 0.2s;
   height: 100%;
   width: 100%;
-  max-height: 260px;
+  max-height: 280px;
+  overflow: hidden;
 
   &:hover {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);

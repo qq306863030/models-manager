@@ -162,8 +162,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   getMemoryList,
@@ -252,6 +252,7 @@ const addDialogVisible = ref(false);
 const addLoading = ref(false);
 const addForm = ref({ description: '', content: '' });
 const detailDialogRef = ref<InstanceType<typeof MemoryDetailDialog> | null>(null);
+let fetchId = 0; // 用于取消旧请求
 
 const handleNavSelect = (index: string) => {
   if (index === 'home') {
@@ -265,23 +266,31 @@ const handleNavSelect = (index: string) => {
   }
 };
 
-const fetchList = async () => {
+const fetchList = async (type?: string) => {
+  const id = ++fetchId;
   loading.value = true;
+  list.value = []; // 切换页面时立即清空旧数据
   try {
-    const res = await getMemoryList(memoryType.value);
+    const t = type || memoryType.value;
+    const res = await getMemoryList(t as any);
+    if (id !== fetchId) return; // 已发起新请求，丢弃旧结果
     if (res.success) {
       list.value = res.data as AgentMemoryItem[];
     }
   } catch (err: any) {
-    // ignore
+    if (id !== fetchId) return;
   } finally {
-    loading.value = false;
+    if (id === fetchId) {
+      loading.value = false;
+    }
   }
 };
 
-// 监听路由参数变化，切换 type 时重新获取数据
-watch(() => route.params.type, () => {
-  fetchList();
+// 路由参数变化时重新获取数据（同组件复用场景）
+onBeforeRouteUpdate((to) => {
+  const newType = to.params.type as string;
+  const type = newType === 'skills' ? 'skills' : newType === 'docs' ? 'docs' : 'user';
+  fetchList(type);
 });
 
 const handleDetail = (item: AgentMemoryItem) => {
@@ -472,6 +481,7 @@ onMounted(() => {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    padding: 16px 20px;
   }
 
   .card-header {
@@ -513,10 +523,11 @@ onMounted(() => {
 .memory-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+  gap: 20px;
   align-items: stretch;
   flex: 1;
   align-content: start;
+  padding: 4px 0;
 
   > * {
     height: 100%;
