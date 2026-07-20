@@ -208,6 +208,62 @@ services:
 - **Cursor / Windsurf** 等 AI IDE：同样通过配置 OpenAI 兼容端点地址即可使用
 - **各类 Agent 框架**（LangChain、AutoGPT 等）：使用 OpenAI / Anthropic SDK 直接指向本服务即可
 
+---
+
+## 🧠 MCP（Model Context Protocol）接入
+
+本工具为 **模型记忆** 和 **处置方案** 两大功能提供了 **MCP Streamable HTTP** 服务端，支持 AI 客户端（如 Claude Desktop）通过 MCP 协议直接读写记录。
+
+### MCP 端点
+
+| 功能 | 端点地址 | 说明 |
+|------|----------|------|
+| 模型记忆 | `POST /{username}/memory/mcp` | 读写用户/AI 记忆 |
+| 处置方案 | `POST /{username}/skills/mcp` | 读写处置方案（解决方案） |
+
+> 端点按用户名隔离，如需 API Key 鉴权，请在管理页面「查看接口」中设置。
+
+### 在 Agent 中配置
+
+```json
+{
+  "mcpServers": {
+    "ai-models-manager-memory": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/memory/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    },
+    "ai-models-manager-skills": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/skills/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+> 如果未设置 API Key，可省略 `headers` 字段。
+
+### 使用示例
+
+配置好后，在对话中直接对 AI 说即可：
+
+**存储记忆**：「帮我记住我喜欢深色主题」
+→ AI 自动调用工具保存到「用户个人偏好」类别
+
+**获取记忆**：「帮我回忆一下我喜欢的主题是什么」
+→ AI 自动搜索记忆并返回结果
+
+**记录处置方案**：「记录一下，下次遇到 Node 内存泄漏就这么排查」
+→ AI 将步骤保存为处置方案，方便以后复用
+
+**查询处置方案**：「之前记过 Node 内存泄漏的处理方法吗？」
+→ AI 搜索并返回匹配的处置方案
+
 ## 📄 License
 
 ISC

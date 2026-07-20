@@ -208,6 +208,62 @@ This tool replaces `deepseek-copilot-bridge` as a unified AI model proxy gateway
 - **Cursor / Windsurf** and other AI IDEs: Configure OpenAI-compatible endpoint address to use
 - **Various Agent frameworks** (LangChain, AutoGPT, etc.): Point OpenAI/Anthropic SDK directly to this service
 
+---
+
+## 🧠 MCP (Model Context Protocol) Integration
+
+This tool provides **MCP Streamable HTTP** servers for **Model Memory** and **Skills** (solution recipes), allowing AI clients (such as Claude Desktop) to read and write records directly via the MCP protocol.
+
+### MCP Endpoints
+
+| Feature | Endpoint | Description |
+|---------|----------|-------------|
+| Model Memory | `POST /{username}/memory/mcp` | Read/write user/AI memories |
+| Skills | `POST /{username}/skills/mcp` | Read/write solution recipes |
+
+> Endpoints are isolated by username. To enable API Key authentication, configure it on the management page via "View API".
+
+### Configuration in Agent
+
+```json
+{
+  "mcpServers": {
+    "ai-models-manager-memory": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/memory/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    },
+    "ai-models-manager-skills": {
+      "type": "http",
+      "url": "http://localhost:11888/admin/skills/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+> If no API Key is set, the `headers` field can be omitted.
+
+### Usage Examples
+
+Once configured, simply tell the AI in your conversation:
+
+**Store a memory**: "Remember that I like dark themes"
+→ AI automatically saves it to the "User Personal Preferences" category
+
+**Retrieve a memory**: "What's my favorite theme?"
+→ AI searches memories and returns the result
+
+**Record a skill**: "Note this down: next time I run into Node memory leaks, here's how to debug"
+→ AI saves the steps as a skill recipe for later reuse
+
+**Search a skill**: "Have I recorded any method for handling Node memory leaks?"
+→ AI searches and returns matching skills
+
 ## 📄 License
 
 ISC

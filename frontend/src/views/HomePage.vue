@@ -650,7 +650,7 @@ onUnmounted(() => {
     .header-nav-links {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 16px;
 
       .el-button {
         height: 32px;
