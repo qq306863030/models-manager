@@ -48,7 +48,7 @@ npm run build
 使用 `ai` 命令一键部署：
 
 ```bash
-ai "帮我重部署：1. 删除远程服务器上远程dist目录的所有内容 2. 把我本地的dist目录下的所有文件上传到远程服务器的对应目录 3. 重启docker容器"
+ai "帮我部署：1. 删除远程服务器上'/roman/models-manager/manager/'中dist目录的所有内容 2. 把我本地的dist目录下的所有文件上传到远程服务器的对应目录 3. 重启docker容器'ai-manager'"
 ```
 
 `ai` 会自动完成三步：
