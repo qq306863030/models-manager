@@ -79,7 +79,7 @@ function buildUserDocumentServer(userId: number): McpServer {
     'ai_mm_search_user_docs',
     {
       description:
-        '【注意：仅当用户明确提到"文档"的文字时才调用此工具，例如"查询文档"、"搜索文档"等。】' +
+        '【注意：仅当用户明确提到"我的文档、用户文档"的文字时才调用此工具，例如"查询文档"、"搜索文档"等。】' +
         '【用户文档搜索】根据关键词在标题(description)和内容(content)中搜索用户文档记录。' +
         '返回匹配记录的 id 和标题(description)列表，不包含完整内容。' +
         '使用方法：模型应先调用此工具，根据用户问题在标题和内容中查找最相关的记录，' +
@@ -141,7 +141,7 @@ function buildUserDocumentServer(userId: number): McpServer {
     'ai_mm_get_user_doc_detail',
     {
       description:
-        '【注意：仅当用户明确提到"文档"的文字时才调用此工具，例如"查看文档"、"文档详情"等。】' +
+        '【注意：仅当用户明确提到"我的文档、用户文档"的文字时才调用此工具，例如"查看文档"、"文档详情"等。】' +
         '【用户文档详情】根据 id 获取用户文档记录的完整详情。' +
         '返回完整的标题(description)和内容(content)。' +
         '使用方法：先用 search_user_docs 搜索到目标记录的 id，再调用此工具查看完整内容。' +
@@ -205,7 +205,7 @@ function buildUserDocumentServer(userId: number): McpServer {
     'ai_mm_create_user_doc',
     {
       description:
-        '【注意：仅当用户明确提到"文档"的文字时才调用此工具，例如"添加文档"、"新建文档"等。】' +
+        '【注意：仅当用户明确提到"我的文档、用户文档"的文字时才调用此工具，例如"添加文档"、"新建文档"等。】' +
         '【新增用户文档】调用此工具保存用户文档，以便将来可以随时查阅。' +
         '需要提供标题(description)和内容(content)。' +
         '注意：description 必须简洁，不超过50字，记录文档的主题；' +
@@ -261,7 +261,7 @@ function buildUserDocumentServer(userId: number): McpServer {
     'ai_mm_update_user_doc',
     {
       description:
-        '【注意：仅当用户明确提到"文档"的文字时才调用此工具，例如"修改文档"、"更新文档"等。】' +
+        '【注意：仅当用户明确提到"我的文档、用户文档"的文字时才调用此工具，例如"修改文档"、"更新文档"等。】' +
         '【修改用户文档】根据 id 修改用户文档记录。' +
         '只更新提供的字段，不传的字段保持不变。' +
         '注意：description 必须简洁，不超过50字；' +
@@ -322,7 +322,7 @@ function buildUserDocumentServer(userId: number): McpServer {
     'ai_mm_delete_user_doc',
     {
       description:
-        '【注意：仅当用户明确提到"文档"的文字时才调用此工具，例如"删除文档"、"移除文档"等。】' +
+        '【注意：仅当用户明确提到"我的文档、用户文档"的文字时才调用此工具，例如"删除文档"、"移除文档"等。】' +
         '【删除用户文档】根据 id 删除用户文档记录。' +
         '删除后不可恢复。' +
         '如果记录不存在或不属于当前用户，会返回错误。',

@@ -100,6 +100,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, OpenAI-Organization, OpenAI-Project');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Request-ID');
+
+  // 支持 Chrome Private Network Access (PNA)
+  // 当域名解析到内网 IP 时，Chrome 会发送 Private-Network 预检请求
+  // 需要响应 Access-Control-Allow-Private-Network: true 才能通过
+  if (req.headers['access-control-request-private-network']) {
+    res.header('Access-Control-Allow-Private-Network', 'true');
+  }
   
   // 处理预检请求
   if (req.method === 'OPTIONS') {
