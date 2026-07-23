@@ -8,6 +8,8 @@
 
 import { WebSocket } from 'ws';
 
+import { formatTimestamp } from './timezone';
+
 export interface ErrorLogEntry {
   timestamp: string
   modelId: number
@@ -25,7 +27,7 @@ class ErrorBroadcaster {
   /** 推送一条错误消息给所有客户端 */
   emitError(modelId: number, modelName: string, errorType: string, message: string): void {
     const entry: ErrorLogEntry = {
-      timestamp: new Date().toISOString(),
+      timestamp: formatTimestamp(new Date()),
       modelId,
       modelName,
       errorType,

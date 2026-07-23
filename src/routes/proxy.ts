@@ -607,7 +607,9 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
   if (isStream) {
     if (res.headersSent) return;
 
-    const callbacks = createSSECallbacks('responses' as InputFormat, res);
+    const callbacks = createSSECallbacks('responses' as InputFormat, res, {
+      modelName: ordered[0]?.model_name || requestModelName,
+    });
     let idx = 0;
 
     while (idx < ordered.length) {

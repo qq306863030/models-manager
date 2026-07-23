@@ -35,13 +35,11 @@ const BATCH_SIZE = 50;
 // 最大等待时间（ms）
 const FLUSH_INTERVAL = 500;
 
-// 获取今天的日期字符串 YYYY-MM-DD（使用本地时区）
+import { formatDate } from './timezone';
+
+// 获取今天的日期字符串 YYYY-MM-DD
 function getTodayStr(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return formatDate(new Date());
 }
 
 // 将单条 token 记录加入队列

@@ -17,6 +17,7 @@ import mcpSkillsRouter from './routes/mcpSkills';
 import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import mcpUserDocumentRouter from './routes/mcpUserDocument';
 import { errorBroadcaster } from './utils/errorBroadcaster';
+import { formatDate, formatTimestamp } from './utils/timezone';
 import os from 'os';
 
 // ========== 日志文件重定向 ==========
@@ -25,8 +26,7 @@ const logDir = path.join(os.homedir(), '.models-manager', 'logs');
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
 function getDateStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return formatDate(new Date());
 }
 
 let currentDate = getDateStr();
@@ -54,14 +54,7 @@ const origStderrWrite = process.stderr.write.bind(process.stderr);
 
 /** 获取当前时间戳 [YYYY-MM-DD HH:mm:ss] */
 function getTimestamp(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  const s = String(d.getSeconds()).padStart(2, '0');
-  return `${y}-${mo}-${dd} ${h}:${mi}:${s}`;
+  return formatTimestamp(new Date());
 }
 
 /** 给每行添加时间戳前缀 */

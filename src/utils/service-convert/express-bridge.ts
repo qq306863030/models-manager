@@ -183,141 +183,413 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
 /**
  * 创建 Responses API SSE 回调
  *
- * 输出完整的 Responses API SSE 事件序列：
- *   response.created → response.in_progress
- *   response.output_item.added → response.content_part.added
- *   response.output_text.delta → response.output_text.done
- *   response.content_part.done → response.output_item.done
- *   response.completed
+ * 参考 cc-switch (farion1231/cc-switch) 的 ChatToResponsesState 状态机模式，
+ * 将 Chat Completions SSE 回调转换为 OpenAI Responses API 命名事件序列：
+ *
+ *   生命周期：
+ *   - 文本:   response.created → output_item.added → content_part.added → output_text.delta → output_text.done → content_part.done → output_item.done
+ *   - 推理:   response.created → output_item.added (reasoning) → reasoning_summary_part.added → reasoning_summary_text.delta → ...done
+ *   - 工具:   response.created → output_item.added (function_call) → function_call_arguments.delta → ...done → output_item.done
+ *   - 完成:   response.completed → [DONE]
+ *
+ * 关键设计（对齐 cc-switch ChatToResponsesState）：
+ *   - 每个输出类型有独立的状态机（reasoning / text / tools），各自管理 added→done 生命周期
+ *   - 推理和文本作为独立的 output item（reasoning → output_index 0, message → output_index 1）
+ *   - 工具调用通过 onToolDelta 增量添加，onToolCall 完成时发 done + output_item.done
+ *   - response.completed 只发一次（onUsage 或 onDone 先到先得）
  */
-export function createResponsesSSECallbacks(res: Response): SSECallbacks {
-  let itemId = `item_${Date.now()}`;
-  let contentIndex = 0;
+export function createResponsesSSECallbacks(res: Response, options?: { modelId?: number; modelName?: string }): SSECallbacks {
+  // ========== 响应级状态 ==========
+  const responseId = `resp_${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const createdAt = Math.floor(Date.now() / 1000);
+  const modelName = options?.modelName || '';
   let hasStarted = false;
-  const pendingTools = new Map<number, { id: string; name: string; args: string }>();
+  let hasCompleted = false;
+  let nextOutputIndex = 0;
+
+  // ========== 文本项状态 ==========
+  let textAdded = false;
+  let textDone = false;
+  let textOutputIndex = -1;
+  let textItemId = '';
+  let textContent = '';
+
+  // ========== 推理项状态 ==========
+  let reasoningAdded = false;
+  let reasoningDone = false;
+  let reasoningOutputIndex = -1;
+  let reasoningItemId = '';
+  let reasoningContent = '';
+
+  // ========== 工具调用状态（按 index） ==========
+  interface PendingTool {
+    id: string;
+    name: string;
+    args: string;
+    outputIndex: number;
+    itemId: string;
+    added: boolean;
+    done: boolean;
+  }
+  const pendingTools = new Map<number, PendingTool>();
+
+  // ========== 已完成的 output items（用于 response.completed 中的 output 字段） ==========
+  const outputItems: Array<Record<string, unknown>> = [];
+
+  // ========== 辅助函数 ==========
 
   const emitEvent = (type: string, data: Record<string, unknown>): void => {
     writeSSEEvent(res, type, { type, ...data });
   };
 
-  const startResponse = (): void => {
+  const ensureStarted = (): void => {
     if (hasStarted) return;
     hasStarted = true;
-    const respId = `resp_${Date.now()}`;
-    emitEvent('response.created', { id: respId });
-    emitEvent('response.in_progress', { id: respId });
-    itemId = `item_${Date.now()}`;
-    contentIndex = 0;
+    emitEvent('response.created', { id: responseId });
+    emitEvent('response.in_progress', { id: responseId });
   };
 
-  return {
-    onContent: (delta: string) => {
-      startResponse();
-      if (contentIndex === 0) {
-        emitEvent('response.output_item.added', {
-          item_id: itemId,
-          item: { id: itemId, type: 'message', status: 'in_progress', role: 'assistant', content: [] },
-          output_index: 0,
-        });
-        emitEvent('response.content_part.added', {
-          item_id: itemId,
-          output_index: 0,
-          content_index: 0,
-          part: { type: 'output_text', text: '' },
-        });
+  /** 确保推理项已创建（首次 onThinking 时触发） */
+  const ensureReasoningAdded = (): void => {
+    if (reasoningAdded) return;
+    reasoningAdded = true;
+    reasoningOutputIndex = nextOutputIndex++;
+    reasoningItemId = `rs_${responseId}`;
+    emitEvent('response.output_item.added', {
+      item_id: reasoningItemId,
+      output_index: reasoningOutputIndex,
+      item: { id: reasoningItemId, type: 'reasoning', summary: [] },
+    });
+    emitEvent('response.reasoning_summary_part.added', {
+      item_id: reasoningItemId,
+      output_index: reasoningOutputIndex,
+      summary_index: 0,
+      part: { type: 'summary_text', text: '' },
+    });
+  };
+
+  /** 确保文本项已创建（首次 onContent 时触发） */
+  const ensureTextAdded = (): void => {
+    if (textAdded) return;
+    textAdded = true;
+    textOutputIndex = nextOutputIndex++;
+    textItemId = `${responseId}_msg`;
+    emitEvent('response.output_item.added', {
+      item_id: textItemId,
+      output_index: textOutputIndex,
+      item: { id: textItemId, type: 'message', status: 'in_progress', role: 'assistant', content: [] },
+    });
+    emitEvent('response.content_part.added', {
+      item_id: textItemId,
+      output_index: textOutputIndex,
+      content_index: 0,
+      part: { type: 'output_text', text: '' },
+    });
+  };
+
+  /** 关闭推理项（发出 done 事件 + 记录到 output） */
+  const finalizeReasoning = (): void => {
+    if (!reasoningAdded || reasoningDone) return;
+    reasoningDone = true;
+    emitEvent('response.reasoning_summary_text.done', {
+      item_id: reasoningItemId,
+      output_index: reasoningOutputIndex,
+      summary_index: 0,
+      text: reasoningContent,
+    });
+    emitEvent('response.reasoning_summary_part.done', {
+      item_id: reasoningItemId,
+      output_index: reasoningOutputIndex,
+      summary_index: 0,
+      part: { type: 'summary_text', text: reasoningContent },
+    });
+    const reasoningItem = {
+      id: reasoningItemId,
+      type: 'reasoning',
+      summary: [{ type: 'summary_text', text: reasoningContent }],
+    };
+    outputItems.push(reasoningItem);
+    emitEvent('response.output_item.done', {
+      output_index: reasoningOutputIndex,
+      item: reasoningItem,
+    });
+  };
+
+  /** 关闭文本项（发出 done 事件） */
+  const finalizeText = (): void => {
+    if (!textAdded || textDone) return;
+    textDone = true;
+    emitEvent('response.output_text.done', {
+      item_id: textItemId,
+      output_index: textOutputIndex,
+      content_index: 0,
+      text: textContent,
+    });
+    emitEvent('response.content_part.done', {
+      item_id: textItemId,
+      output_index: textOutputIndex,
+      content_index: 0,
+      part: { type: 'output_text', text: textContent },
+    });
+    const messageItem = {
+      id: textItemId,
+      type: 'message',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: textContent }],
+    };
+    outputItems.push(messageItem);
+    emitEvent('response.output_item.done', {
+      output_index: textOutputIndex,
+      item: messageItem,
+    });
+  };
+
+  /** 关闭所有未关闭的工具项 */
+  const finalizeTools = (): void => {
+    for (const [, tool] of pendingTools) {
+      if (tool.done) continue;
+      if (!tool.added) {
+        continue;
       }
+      tool.done = true;
+      emitEvent('response.function_call_arguments.done', {
+        item_id: tool.itemId,
+        output_index: tool.outputIndex,
+        arguments: tool.args,
+      });
+      const toolItem = {
+        id: tool.itemId,
+        type: 'function_call',
+        status: 'completed',
+        call_id: tool.id,
+        name: tool.name,
+        arguments: tool.args,
+      };
+      outputItems.push(toolItem);
+      emitEvent('response.output_item.done', {
+        output_index: tool.outputIndex,
+        item: toolItem,
+      });
+    }
+  };
+
+  /** 发送 response.completed（仅一次） */
+  const emitCompleted = (usage?: TokenUsage): void => {
+    if (hasCompleted) return;
+    hasCompleted = true;
+
+    // 关闭所有未关闭的项
+    if (reasoningAdded && !reasoningDone) finalizeReasoning();
+    if (textAdded && !textDone) finalizeText();
+    finalizeTools();
+
+    // 注意：response.completed 事件必须包含完整的 response 字段集
+    // （含 id / object / created_at / model / output），否则 Codex CLI 等
+    // Responses API 客户端会解析失败并报 "missing field `id`"。
+    // 参考 cc-switch 的 sse::response_completed / base_response。
+    emitEvent('response.completed', {
+      response: {
+        id: responseId,
+        object: 'response',
+        created_at: createdAt,
+        status: 'completed',
+        model: modelName,
+        output: outputItems,
+        usage: usage
+          ? { input_tokens: usage.prompt_tokens, output_tokens: usage.completion_tokens, total_tokens: usage.total_tokens }
+          : null,
+      },
+    });
+  };
+
+  // ========== 回调实现 ==========
+
+  return {
+    /** 文本内容 delta — 创建 message output item + content part + output_text.delta */
+    onContent: (delta: string) => {
+      ensureStarted();
+      // 如果推理项仍在打开中，先关闭它（推理在文本之前）
+      if (reasoningAdded && !reasoningDone) {
+        finalizeReasoning();
+      }
+      ensureTextAdded();
+      textContent += delta;
       emitEvent('response.output_text.delta', {
-        item_id: itemId,
-        output_index: 0,
+        item_id: textItemId,
+        output_index: textOutputIndex,
         content_index: 0,
         delta,
       });
     },
+
+    /** 推理/思考 delta — 创建 reasoning output item + summary delta */
     onThinking: (delta: string) => {
-      startResponse();
-      emitEvent('response.reasoning_text.delta', {
-        item_id: itemId,
-        output_index: 0,
-        content_index: 0,
+      ensureStarted();
+      ensureReasoningAdded();
+      reasoningContent += delta;
+      emitEvent('response.reasoning_summary_text.delta', {
+        item_id: reasoningItemId,
+        output_index: reasoningOutputIndex,
+        summary_index: 0,
         delta,
       });
     },
+
+    /** 工具调用增量 — 创建 function_call item + 增量参数 */
     onToolDelta: (delta: string, info) => {
-      startResponse();
-      const pending = pendingTools.get(info.index) || { id: info.id, name: '', args: '' };
-      if (!pendingTools.has(info.index)) {
+      ensureStarted();
+      // 工具出现时，关闭仍在打开的推理项
+      if (reasoningAdded && !reasoningDone) {
+        finalizeReasoning();
+      }
+
+      let pending = pendingTools.get(info.index);
+      if (!pending) {
+        const outputIndex = nextOutputIndex++;
+        pending = {
+          id: info.id,
+          name: info.name || '',
+          args: '',
+          outputIndex,
+          itemId: info.id,
+          added: false,
+          done: false,
+        };
         pendingTools.set(info.index, pending);
-        emitEvent('response.output_item.added', {
-          item_id: info.id,
-          item: {
-            id: info.id, type: 'function_call', status: 'in_progress',
-            call_id: info.id, name: info.name || '', arguments: '',
-          },
-          output_index: 1,
-        });
+      }
+
+      // 更新状态
+      if (info.field === 'name' && info.name) {
+        pending.name = info.name;
       }
       if (info.field === 'arguments') {
         pending.args += delta;
+      }
+
+      // 首次创建时发送 output_item.added（注意：name 可能还没到，用已有信息）
+      if (!pending.added) {
+        pending.added = true;
+        emitEvent('response.output_item.added', {
+          item_id: pending.itemId,
+          output_index: pending.outputIndex,
+          item: {
+            id: pending.itemId,
+            type: 'function_call',
+            status: 'in_progress',
+            call_id: pending.id,
+            name: pending.name || info.name || '',
+            arguments: '',
+          },
+        });
+      }
+
+      // 增量参数
+      if (info.field === 'arguments') {
         emitEvent('response.function_call_arguments.delta', {
-          item_id: info.id,
-          output_index: 1,
+          item_id: pending.itemId,
+          output_index: pending.outputIndex,
           delta,
         });
-      } else if (info.field === 'name' && info.name) {
-        pending.name = info.name;
       }
     },
+
+    /** 完整工具调用（complete）— 关闭工具项并发出 done */
     onToolCall: (toolCall: ToolCallInfo) => {
-      startResponse();
-      emitEvent('response.output_item.added', {
-        item_id: toolCall.id,
-        item: {
-          id: toolCall.id, type: 'function_call', status: 'completed',
-          call_id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments,
-        },
-        output_index: 1,
-      });
-    },
-    onUsage: (usage: TokenUsage) => {
-      startResponse();
-      if (contentIndex >= 0) {
-        emitEvent('response.output_text.done', {
-          item_id: itemId, output_index: 0, content_index: 0,
-          text: '',
+      ensureStarted();
+      // 工具完成时，关闭仍在打开的推理项
+      if (reasoningAdded && !reasoningDone) {
+        finalizeReasoning();
+      }
+
+      // 看看是否已有通过 onToolDelta 跟踪的同名工具
+      let found = false;
+      for (const [, pending] of pendingTools) {
+        if (pending.id === toolCall.id && pending.added && !pending.done) {
+          found = true;
+          pending.done = true;
+          pending.args = toolCall.function.arguments;
+          if (toolCall.function.name) pending.name = toolCall.function.name;
+          emitEvent('response.function_call_arguments.done', {
+            item_id: pending.itemId,
+            output_index: pending.outputIndex,
+            arguments: toolCall.function.arguments,
+          });
+          const toolItem = {
+            id: pending.itemId,
+            type: 'function_call',
+            status: 'completed',
+            call_id: pending.id,
+            name: pending.name,
+            arguments: toolCall.function.arguments,
+          };
+          outputItems.push(toolItem);
+          emitEvent('response.output_item.done', {
+            output_index: pending.outputIndex,
+            item: toolItem,
+          });
+          break;
+        }
+      }
+
+      if (!found) {
+        // 非流式/完整到达的工具调用（onToolDelta 未触发过）
+        const outputIndex = nextOutputIndex++;
+        const toolItem = {
+          id: toolCall.id,
+          type: 'function_call',
+          status: 'completed',
+          call_id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+        };
+        outputItems.push(toolItem);
+        emitEvent('response.output_item.added', {
+          item_id: toolCall.id,
+          output_index: outputIndex,
+          item: toolItem,
         });
-        emitEvent('response.content_part.done', {
-          item_id: itemId, output_index: 0, content_index: 0,
-          part: { type: 'output_text', text: '' },
+        emitEvent('response.function_call_arguments.done', {
+          item_id: toolCall.id,
+          output_index: outputIndex,
+          arguments: toolCall.function.arguments,
         });
         emitEvent('response.output_item.done', {
-          item_id: itemId, output_index: 0,
-          item: { id: itemId, type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: '' }] },
+          output_index: outputIndex,
+          item: toolItem,
         });
       }
-      emitEvent('response.completed', {
-        response: {
-          status: 'completed',
-          usage: { input_tokens: usage.prompt_tokens, output_tokens: usage.completion_tokens, total_tokens: usage.total_tokens },
-        },
-      });
     },
+
+    /** Token 用量 — 关闭所有项 + response.completed（与 onDone 互斥触发） */
+    onUsage: (usage: TokenUsage) => {
+      ensureStarted();
+      emitCompleted(usage);
+    },
+
+    /** 流完成 — 如果 onUsage 未触发过，在此完成（兜底） */
     onDone: () => {
-      if (!hasStarted) startResponse();
-      emitEvent('response.completed', {
-        response: { status: 'completed', usage: null },
-      });
+      if (!hasStarted) ensureStarted();
+      if (!hasCompleted) {
+        emitCompleted();
+      }
       res.write('data: [DONE]\n\n');
       res.end();
     },
+
+    /** 错误处理 */
     onError: (error: Error) => {
       console.error(`[express-bridge] ResponsesSSE error:`, error.message);
       console.error(`[express-bridge] ResponsesSSE full error:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
       console.error(`[express-bridge] ResponsesSSE stack:`, error.stack?.split('\n').slice(0, 4).join('\n'));
-      // 向客户端发送失败事件
       try {
         writeSSEEvent(res, 'response.failed', {
           response: {
+            id: responseId,
+            object: 'response',
+            created_at: createdAt,
             status: 'failed',
+            model: modelName,
             error: { code: 'stream_error', message: error.message },
           },
         });
@@ -325,6 +597,7 @@ export function createResponsesSSECallbacks(res: Response): SSECallbacks {
         res.end();
       } catch { /* 响应可能已结束 */ }
     },
+
     onConnectionStatus: () => { /* no-op */ },
   };
 }
@@ -518,7 +791,7 @@ export function pickProxy(
 export function createSSECallbacks(inputFormat: InputFormat, res: Response, options?: { modelId?: number; promptTokens?: number; modelName?: string }): SSECallbacks {
   switch (inputFormat) {
     case 'chat': return createChatSSECallbacks(res, options);
-    case 'responses': return createResponsesSSECallbacks(res);
+    case 'responses': return createResponsesSSECallbacks(res, options);
     case 'anthropic': return createAnthropicSSECallbacks(res);
   }
 }

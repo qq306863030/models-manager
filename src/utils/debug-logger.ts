@@ -8,38 +8,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { formatDate, formatTimestampMS } from './timezone';
 
 /** 统一日志目录 */
 function getLogDir(): string {
   return path.join(os.homedir(), '.models-manager', 'logs');
 }
-// 动态导入 dayjs（未在 package.json 中声明，作为 transitive dep 存在）
-let dayjs: any = null;
-try {
-  dayjs = require('dayjs');
-} catch {
-  // dayjs 不可用时降级到 Date
-}
 
-/** 获取当前小时级时间戳（用于日志文件名） */
+/** 获取当前小时级时间戳（用于日志文件名：YYYY-MM-DD-HH） */
 function getLogTimestamp(): string {
-  if (dayjs) {
-    return dayjs().format('YYYY-MM-DD-HH');
-  }
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const h = String(now.getHours()).padStart(2, '0');
-  return `${y}-${m}-${d}-${h}`;
+  const d = new Date();
+  return `${formatDate(d)}-${String(d.getHours()).padStart(2, '0')}`;
 }
 
 /** 获取可读时间戳（用于日志内容行） */
 function getLogTime(): string {
-  if (dayjs) {
-    return dayjs().format('YYYY-MM-DD HH:mm:ss.SSS');
-  }
-  return new Date().toISOString();
+  return formatTimestampMS(new Date());
 }
 
 // ========== 请求级别日志缓冲区 ==========
@@ -80,8 +64,11 @@ export function appendToLog(
 /**
  * 将缓冲区内容写入磁盘（日志文件），并标记为已刷写
  * 仅在请求报错时调用
+ *
+ * @param buffer 日志缓冲区
+ * @param error 触发刷写的错误信息（可选），会自动追加到日志末尾
  */
-export function flushLog(buffer: RequestLogBuffer): void {
+export function flushLog(buffer: RequestLogBuffer, error?: unknown): void {
   if (buffer.flushed || buffer.entries.length === 0) return;
   buffer.flushed = true;
 
@@ -98,7 +85,17 @@ export function flushLog(buffer: RequestLogBuffer): void {
       `[${e.time}] [${e.direction}] ${buffer.endpoint}\n${e.data}`
     ).join('\n\n');
 
-    fs.appendFile(filepath, lines + '\n\n', (err) => {
+    // 如果有错误信息，追加到日志末尾
+    let output = lines + '\n\n';
+    if (error !== undefined) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      output += `[${getLogTime()}] [ERROR] ${buffer.endpoint}\n`;
+      output += `message: ${err.message}\n`;
+      const stackLines = (err.stack || '').split('\n').slice(0, 6).join('\n');
+      if (stackLines) output += `stack:\n${stackLines}\n`;
+    }
+
+    fs.appendFile(filepath, output, (err) => {
       if (err) console.error(`[debug-logger] write failed:`, err.message);
     });
   } catch (err) {
@@ -131,8 +128,14 @@ export function writeDebugLog(
     const filepath = path.join(logDir, filename);
 
     const time = getLogTime();
-    const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-    const line = `[${time}] [${direction.toUpperCase()}] ${endpoint}\n${dataStr}\n\n`;
+    let line: string;
+
+    if (direction === 'error' && data instanceof Error) {
+      line = `[${time}] [ERROR] ${endpoint}\nmessage: ${data.message}\nstack:\n${(data.stack || '').split('\n').slice(0, 6).join('\n')}\n\n`;
+    } else {
+      const dataStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      line = `[${time}] [${direction.toUpperCase()}] ${endpoint}\n${dataStr}\n\n`;
+    }
 
     fs.appendFile(filepath, line, (err) => {
       if (err) {
