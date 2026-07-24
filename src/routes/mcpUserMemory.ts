@@ -11,7 +11,7 @@
  *   - "用户个人偏好"
  *   - "AI人格设定"
  *   - "AI长期计划"
- *   - "AI其他长期记忆"
+ *   - "AI其他长期记忆"（也支持 "AI其他记忆-xxx" 作为动态子类别）
  *
  * 工具列表:
  *   - ai_mm_search_user_memories   — 根据类别关键词搜索，返回 id + description 列表
@@ -49,13 +49,17 @@ const VALID_CATEGORIES = [
   '用户个人偏好',
   'AI人格设定',
   'AI长期计划',
-  'AI其他长期记忆',
+  'AI其他记忆',
 ] as const;
 
 type Category = (typeof VALID_CATEGORIES)[number];
 
-function isValidCategory(val: string): val is Category {
-  return VALID_CATEGORIES.includes(val as Category);
+function isValidCategory(val: string): boolean {
+  // 允许精确匹配已有类别
+  if (VALID_CATEGORIES.includes(val as Category)) return true;
+  // 允许 'AI其他记忆-xxx' 作为动态子类别
+  if (val.startsWith('AI其他记忆-') && val.length > 'AI其他记忆-'.length) return true;
+  return false;
 }
 
 // ========== API Key 验证中间件 ==========
@@ -107,7 +111,7 @@ function buildUserMemoryServer(userId: number): McpServer {
         '【注意：仅当用户明确提到"模型记忆、记忆MCP"的文字时才调用此工具，例如"查询记忆"、"从记忆中搜索"等。】' +
         '【用户/AI 记忆搜索】根据类别关键词在标题(description)和内容(content)中搜索用户/AI 记忆记录。' +
         'description 是固定的类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
-        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
+        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。其中 "AI其他记忆" 支持 "AI其他记忆-xxx" 子类别格式。' +
         '返回匹配记录的 id 和 description（类别）列表，不包含完整内容。' +
         '使用方法：模型应先调用此工具搜索相关记忆，获取目标记录的 id 后，再调用 get_user_memory_detail 查看完整详情。' +
         '如果关键词为空，则返回所有记录。',
@@ -234,16 +238,16 @@ function buildUserMemoryServer(userId: number): McpServer {
         '【注意：仅当用户明确提到"模型记忆、记忆MCP"的文字时才调用此工具，例如"添加记忆"、"新建记忆"等。】' +
         '【新增用户/AI 记忆】调用此工具记录关于用户或 AI 自身的重要信息，以便将来对话中可以参考和复用。' +
         'description 必须是以下固定类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
-        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
+        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。其中 "AI其他记忆" 支持 "AI其他记忆-xxx" 子类别格式。' +
         'content 无格式限制，用自然语言清晰描述即可。' +
-        '注意：description 只能从上述 7 种类别中选择，不可自定义。创建成功后返回新记录的 id。',
+        '注意：description 可以选择上述固定类别，或使用 "AI其他记忆-xxx" 格式自定义子类别。创建成功后返回新记录的 id。',
       inputSchema: z.object({
         description: z
           .string()
           .describe(
             '记忆类别，必须从以下固定值中选择其一：' +
             '"用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
-            '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"'
+            '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。其中 "AI其他记忆" 支持 "AI其他记忆-xxx" 子类别格式。'
           ),
         content: z
           .string()
@@ -296,7 +300,7 @@ function buildUserMemoryServer(userId: number): McpServer {
         '【注意：仅当用户明确提到"模型记忆、记忆MCP"的文字时才调用此工具，例如"修改记忆"、"更新记忆"等。】' +
         '【修改用户/AI 记忆】根据 id 修改用户/AI 记忆记录，更新信息以便将来对话中可以参考和复用。' +
         'description 必须是以下固定类别之一："用户称呼"、"用户操作习惯"、"用户编码习惯"、"用户个人偏好"、' +
-        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。' +
+        '"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。其中 "AI其他记忆" 支持 "AI其他记忆-xxx" 子类别格式。' +
         'content 无格式限制，用自然语言清晰描述即可。' +
         '只更新提供的字段，不传的字段保持不变。' +
         '如果记录不存在或不属于当前用户，会返回错误。',
@@ -307,7 +311,7 @@ function buildUserMemoryServer(userId: number): McpServer {
           .optional()
           .describe(
             '修改后的记忆类别，必须从以下固定值中选择："用户称呼"、"用户操作习惯"、"用户编码习惯"、' +
-            '"用户个人偏好"、"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。不传则保持原值'
+            '"用户个人偏好"、"AI人格设定"、"AI长期计划"、"AI其他长期记忆"。其中 "AI其他记忆" 支持 "AI其他记忆-xxx" 子类别格式。不传则保持原值'
           ),
         content: z
           .string()
