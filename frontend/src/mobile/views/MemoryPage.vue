@@ -76,17 +76,21 @@
           </template>
         </van-nav-bar>
         <div class="detail-body" style="padding: 16px;">
-          <van-cell-group inset>
+          <!-- 查看模式：标题文本 + Markdown 渲染内容 -->
+          <template v-if="!isEditing">
+            <div class="detail-title">{{ editForm.description }}</div>
+            <div class="markdown-body" v-html="renderedContent"></div>
+          </template>
+          <!-- 编辑模式：可编辑表单 -->
+          <van-cell-group inset v-else label-width="4em">
             <van-field
               v-model="editForm.description"
               label="标题"
-              :readonly="!isEditing"
               :border="false" />
             <van-field
               v-model="editForm.content"
               type="textarea"
               label="内容"
-              :readonly="!isEditing"
               rows="10"
               autosize
               :border="false" />
@@ -125,6 +129,13 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant';
+import MarkdownIt from 'markdown-it';
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true,
+});
 import {
   getMemoryList,
   createMemory,
@@ -141,6 +152,11 @@ const addDialogVisible = ref(false);
 const detailVisible = ref(false);
 const isEditing = ref(false);
 const currentItem = ref<AgentMemoryItem | null>(null);
+
+const renderedContent = computed(() => {
+  if (!editForm.value.content) return '<p style="color: #999;">（无内容）</p>';
+  return md.render(editForm.value.content);
+});
 const addForm = ref({ description: '', content: '' });
 const editForm = ref({ description: '', content: '' });
 const showMcpConfig = ref(false);
@@ -397,5 +413,96 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 8px 0;
+}
+
+.detail-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #323233;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+/* Markdown 渲染样式 */
+.markdown-body {
+  overflow-y: auto;
+  background: #fafafa;
+  padding: 14px 16px;
+  border-radius: 6px;
+  border: 1px solid #eee;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #24292e;
+
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+    color: #1a1a1a;
+  }
+
+  :deep(h1) { font-size: 1.4em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+  :deep(h2) { font-size: 1.25em; border-bottom: 1px solid #eaecef; padding-bottom: 0.25em; }
+  :deep(h3) { font-size: 1.1em; }
+
+  :deep(p) {
+    margin-top: 0;
+    margin-bottom: 12px;
+  }
+
+  :deep(ul), :deep(ol) {
+    padding-left: 2em;
+    margin-bottom: 12px;
+  }
+
+  :deep(li) {
+    margin-bottom: 4px;
+  }
+
+  :deep(code) {
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+
+  :deep(pre) {
+    background: #f0f0f0;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 12px;
+
+    code {
+      background: none;
+      padding: 0;
+    }
+  }
+
+  :deep(blockquote) {
+    margin: 0 0 12px;
+    padding: 0 1em;
+    color: #6a737d;
+    border-left: 0.25em solid #dfe2e5;
+  }
+
+  :deep(table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 12px;
+
+    th, td {
+      border: 1px solid #dfe2e5;
+      padding: 6px 10px;
+      text-align: left;
+    }
+
+    th {
+      background: #f6f8fa;
+      font-weight: 600;
+    }
+  }
 }
 </style>

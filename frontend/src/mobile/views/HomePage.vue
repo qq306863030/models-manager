@@ -3,9 +3,7 @@
     <div class="custom-navbar">
       <div class="navbar-title">AI模型管理</div>
       <div class="navbar-actions">
-        <van-button size="small" @click="router.push('/m/memory/user')">模型记忆</van-button>
-        <van-button size="small" @click="router.push('/m/memory/skills')">处置方案</van-button>
-        <van-button size="small" @click="router.push('/m/memory/docs')">我的文档</van-button>
+        <van-button size="small" @click="router.push('/m/memory/user')">记忆</van-button>
         <van-button type="primary" size="small" @click="openAddDialog">添加</van-button>
         <van-button size="small" @click="openApiDialog">接口</van-button>
         <van-button size="small" @click="settingsDialogVisible = true">设置</van-button>
@@ -105,10 +103,10 @@
           <!-- 调用地址 -->
           <div class="api-base-url">
             <span class="base-url-label">调用地址：</span>
-            <code class="base-url-value" @click="copyText(currentOrigin + '/' + (username || 'default'))">
-              {{ currentOrigin }}/{{ username || 'default' }}
+            <code class="base-url-value" @click="copyText(currentOrigin + '/' + (username || 'default') + '/v1')">
+              {{ currentOrigin }}/{{ username || 'default' }}/v1
             </code>
-            <van-icon name="copy-o" size="14" style="margin-left:4px;color:#1989fa;" @click="copyText(currentOrigin + '/' + (username || 'default'))" />
+            <van-icon name="copy-o" size="14" style="margin-left:4px;color:#1989fa;" @click="copyText(currentOrigin + '/' + (username || 'default') + '/v1')" />
             <div class="base-url-hint">如果生成了 Key，调用时需要填写 Authorization: Bearer &lt;Key&gt;</div>
           </div>
 
