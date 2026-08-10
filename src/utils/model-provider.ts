@@ -185,6 +185,8 @@ export function createModelProvider(model: ModelRow): AIProvider {
   const baseURL = model.url.replace(/\/$/, '');
   const modelName = model.model_name;
 
+  console.log(`[DIAG] createModelProvider | id=${model.id} name="${model.name}" model_name="${modelName}" api_format=${model.api_format} baseUrl="${baseURL}"`);
+
   switch (model.api_format) {
     case API_FORMAT.ANTHROPIC: {
       const anthropicBaseURL = baseURL.replace(/\/v1$/, '');
