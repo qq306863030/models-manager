@@ -41,6 +41,7 @@ import {
   type GenericMessage,
   type ChatCallParams,
 } from '../utils/model-provider';
+import { createBase64File } from '../utils/base64-file';
 
 import {
   writeSSE,
@@ -281,6 +282,51 @@ function buildChatParams(body: Record<string, unknown>): ChatRequestParams {
   };
 }
 
+function modelSupportsVision(model: ModelRow): boolean {
+  const capabilities = parseModelCapabilities(model.capabilities);
+  return capabilities.includes('vision');
+}
+
+async function convertImageUrlToTextParts(messages: GenericMessage[], baseUrl: string): Promise<GenericMessage[]> {
+  return Promise.all(
+    messages.map(async (msg) => {
+      if (!Array.isArray(msg.content)) return msg;
+
+      const convertedContent = await Promise.all(
+        (msg.content as Array<Record<string, unknown>>).map(async (part) => {
+          if (part?.type === 'image_url') {
+            const imageUrl = (part.image_url as Record<string, unknown> | undefined)?.url as string | undefined;
+            const isBase64 = typeof imageUrl === 'string' && /^data:[^;]+;base64,/.test(imageUrl);
+            if (isBase64) {
+              const fileResult = await createBase64File(imageUrl);
+              console.log(fileResult);
+              const base64Url = `${baseUrl}/base64-files/${fileResult.base64FileName}`;
+              if (fileResult.imageUrl) {
+                const imageUrl = `${baseUrl}/base64-files/${fileResult.imageFileName}`;
+                return {
+                  type: 'text',
+                  text: '用户携带了一个图片，图片地址是' + imageUrl,
+                };
+              }
+              return {
+                type: 'text',
+                text: '用户携带了一个图片，但数据转换失败，base64数据文件地址是' + base64Url,
+              };
+            }
+            return {
+              type: 'text',
+              text: '用户携带了一个图片信息:' + JSON.stringify(part),
+            };
+          }
+          return part;
+        }),
+      );
+
+      return { ...msg, content: convertedContent };
+    }),
+  );
+}
+
 function getOrderedModels(requestModelName: string, userId?: number): ModelRow[] {
   const allModels = getAvailableModels(userId);
   const requestModel = allModels.find((m) => m.name === requestModelName);
@@ -315,6 +361,17 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   });
 
   const ordered = getOrderedModels(requestModelName, userId);
+
+  // ===== DIAG: 诊断日志 =====
+  console.log(`[DIAG] =============================================================`);
+  console.log(`[DIAG] handleChatCompletions | userId=${userId} | requestModel="${requestModelName}" | stream=${isStream}`);
+  console.log(`[DIAG] availableModels count=${ordered.length}`);
+  for (let di = 0; di < Math.min(ordered.length, 20); di++) {
+    const dm = ordered[di];
+    console.log(`[DIAG]   [${di}] id=${dm.id} name="${dm.name}" model_name="${dm.model_name}" api_format=${dm.api_format} baseUrl="${dm.url}" isLock=${dm.isLock} isDisable=${dm.isDisable}`);
+  }
+  console.log(`[DIAG] =============================================================`);
+
   if (ordered.length === 0) {
     res.status(503).json({ error: { message: '没有可用的模型', type: 'upstream_error', status: 503 } });
     return;
@@ -334,12 +391,18 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       const providerType = toProviderType(createModelProvider(model).type);
       const baseURL = model.url.replace(/\/$/, '');
 
+      console.log(`[DIAG] trying model [${idx - 1}/${ordered.length}] | name="${model.name}" model_name="${model.model_name}" providerType=${providerType} baseURL="${baseURL}"`);
+
       // 为当前 model 创建回调（传入 modelId 以自动跟踪 token）
       callbacks = createSSECallbacks('chat' as InputFormat, res, { modelId: model.id, promptTokens, modelName: model.model_name });
 
+      const messagesForModel = modelSupportsVision(model)
+        ? params.messages
+        : await convertImageUrlToTextParts(params.messages, `${req.protocol}://${req.get('host')}`);
+
       const proxyBody: Record<string, unknown> = stripUndefined({
         model: model.model_name,
-        messages: params.messages as unknown as Array<Record<string, unknown>>,
+        messages: messagesForModel as unknown as Array<Record<string, unknown>>,
         max_tokens: params.maxTokens,
         temperature: params.temperature,
         top_p: params.topP,

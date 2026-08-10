@@ -10,6 +10,7 @@
 - 📊 实时 Token 用量追踪，按模型分组统计
 - 🎨 支持多种 API 格式，自定义模型参数
 - 🖱️ 拖拽排序模型优先级
+- 🖼️ 新增图片转换能力：当模型不具有图像识别能力（即模态能力不包含 Vision）时，可将请求中携带的 base64 图片转换为 URL，并配合 [deepseek-vision-mcp](https://www.npmjs.com/package/deepseek-vision-mcp) 让模型具备图像识别能力
 - 🤝 **可在各种 Agent 工具中接入**，替代 `deepseek-copilot-bridge` 等工具，可直接在 **VSCode Copilot** 中接入使用
 
 ### 📌 模型调用策略

@@ -18,6 +18,7 @@ import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import mcpUserDocumentRouter from './routes/mcpUserDocument';
 import { errorBroadcaster } from './utils/errorBroadcaster';
 import { formatDate, formatTimestamp } from './utils/timezone';
+import { getBase64FileDir } from './utils/base64-file';
 import os from 'os';
 
 // ========== 日志文件重定向 ==========
@@ -157,6 +158,17 @@ app.use('/:username', mcpUserDocumentRouter);
 
 // 生产环境：托管前端静态文件
 app.use(express.static(publicPath));
+
+// Base64 临时文件服务
+const base64FileDir = getBase64FileDir();
+app.use('/base64-files', express.static(base64FileDir, {
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.base64' || ext === '.txt') {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    }
+  },
+}));
 
 // 移动端静态文件（用于 /m/* 路由）
 const mobilePath = path.join(publicPath, 'mobile.html');

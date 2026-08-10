@@ -10,6 +10,7 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 - 📊 Real-time token usage tracking with per-model statistics
 - 🎨 Multiple API format support with custom model parameters
 - 🖱️ Drag-and-drop model priority sorting
+- 🖼️ Added image conversion support: when a model does not have image recognition capability (i.e. its modality capability does not include Vision), base64 images carried in requests can be converted into URLs and used with [deepseek-vision-mcp](https://www.npmjs.com/package/deepseek-vision-mcp) to enable image recognition for the model
 - 🤝 **Integrates with various Agent tools**, replaces `deepseek-copilot-bridge`, can be directly used in **VSCode Copilot**
 
 ### 📌 Model Calling Strategy
