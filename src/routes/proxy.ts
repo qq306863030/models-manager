@@ -25,16 +25,12 @@ import {
   buildOpenAIModel,
   parseModelCapabilities,
   getEffectiveContentLength,
-  getEffectiveMaxToken,
   MAX_RESPONSE_TOKENS,
   LOCK_DURATION_MS,
-  REQUEST_TIMEOUT_MS,
-  API_FORMAT,
   isModelLocked,
   isUpstreamGatewayError,
   callOpenAIChat,
   callAnthropic,
-  callOpenAIResponses,
   callAnthropicMessages,
   streamAnthropicMessages,
   type ModelRow,
@@ -44,17 +40,11 @@ import {
 import { createBase64File } from '../utils/base64-file';
 
 import {
-  writeSSE,
-  writeSSEEvent,
-  processChatStream,
   processAnthropicStream,
-  streamChatAsAnthropicSSE,
 } from '../utils/stream-convert';
 
 import {
   streamChatAsResponses as streamChatAsResponsesV2,
-  processResponsesFetchStream,
-  buildResponsesResponse,
 } from '../utils/responses-stream';
 
 import { trackTokenUsage, trackApiCall } from '../utils/tokenTracker';
@@ -443,15 +433,8 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
             callbacks.onDone?.();
             return;
           }
-          // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
-          if (isRetryableError(err)) {
-            if (idx < ordered.length) continue;
-            callbacks.onError?.(new Error('所有可用模型均失败'));
-            callbacks.onDone?.();
-            return;
-          }
           console.warn(`[proxy] 锁定模型: ${model.name}`);
-        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
           callbacks.onError?.(new Error('所有可用模型均失败'));
           callbacks.onDone?.();
@@ -483,6 +466,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           apiKey: model.api_key,
           modelId: model.id,
           providerLabel: `Chat→${providerType}`,
+          requestId: (req as any).requestId,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks, res);
 
@@ -508,15 +492,9 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
-        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
-        if (isRetryableError(err)) {
-          if (idx < ordered.length) continue;
-          callbacks!.onError?.(new Error('所有可用模型均失败'));
-          callbacks!.onDone?.();
-          return;
-        }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+        if (idx < ordered.length) continue;
       }
     }
 
@@ -722,15 +700,8 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           const errMsg = (err as Error).message;
           console.error(`[proxy] Anthropic model "${model.name}" failed:`, { name: errName, message: errMsg, url: model.url, apiFormat: model.api_format, stack: (err as Error).stack?.split('\n').slice(0, 8).join('\n') });
           errorBroadcaster.emitError(model.id, model.name, 'anthropic_error', errMsg);
-          if (isRetryableError(err)) {
-            console.error(`[proxy] 临时错误（不锁定模型）: ${model.name}`);
-            if (idx < ordered.length) continue;
-            callbacks.onError?.(new Error('所有可用模型均失败'));
-            callbacks.onDone?.();
-            return;
-          }
           console.warn(`[proxy] 锁定模型: ${model.name}`);
-        db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+          db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
           if (idx < ordered.length) continue;
           callbacks.onError?.(new Error('所有可用模型均失败'));
           callbacks.onDone?.();
@@ -758,6 +729,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           baseUrl: baseURL,
           apiKey: model.api_key,
           providerLabel: `Responses→${providerType}`,
+          requestId: (req as any).requestId,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 
@@ -780,15 +752,9 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
-        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
-        if (isRetryableError(err)) {
-          if (idx < ordered.length) continue;
-          callbacks!.onError?.(new Error('所有可用模型均失败'));
-          callbacks!.onDone?.();
-          return;
-        }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+        if (idx < ordered.length) continue;
       }
     }
 
@@ -873,6 +839,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
           baseUrl: baseURL,
           apiKey: model.api_key,
           providerLabel: `Anthropic→${providerType}`,
+          requestId: (req as any).requestId,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 
@@ -895,15 +862,9 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
         if (status === 400 && isUpstreamGatewayError(err)) {
           continue;
         }
-        // 连接中断/超时等临时网络错误：不锁定模型，继续故障转移
-        if (isRetryableError(err)) {
-          if (idx < ordered.length) continue;
-          callbacks.onError?.(new Error('所有可用模型均失败'));
-          callbacks.onDone?.();
-          return;
-        }
         console.warn(`[proxy] 锁定模型: ${model.name}`);
         db.prepare('UPDATE models SET isLock = ? WHERE id = ?').run(Date.now(), model.id);
+        if (idx < ordered.length) continue;
       }
     }
 

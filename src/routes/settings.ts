@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import db, { saveUserApiKey, getUserApiKey, deleteUserApiKey, getUserSettings, saveUserSettings } from '../config/database';
+import { saveUserApiKey, getUserApiKey, deleteUserApiKey, getUserSettings, saveUserSettings } from '../config/database';
 
 const router = Router();
 

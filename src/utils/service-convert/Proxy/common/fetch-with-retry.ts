@@ -59,6 +59,8 @@ export interface FetchWithRetryOptions extends RequestInit {
   retryIntervalMs?: number;
   /** 日志标签 */
   providerLabel?: string;
+  /** 请求 ID (Tracing ID) */
+  requestId?: string;
   /**
    * 响应校验函数 — 在响应成功返回后被调用，可检查响应内容。
    * 如果校验失败，抛出的错误会被 isRetryableError 判断，
@@ -83,6 +85,7 @@ export async function fetchWithRetry(
     maxRetries = DEFAULT_MAX_RETRIES,
     retryIntervalMs = DEFAULT_INTERVAL_MS,
     providerLabel = 'Upstream',
+    requestId,
     validateResponse,
     ...fetchOptions
   } = options;
@@ -92,6 +95,8 @@ export async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const attemptStartTime = Date.now();
+    const reqTag = requestId ? ` [ReqID: ${requestId}]` : '';
 
     try {
       const response = await fetch(endpoint, {
@@ -125,15 +130,17 @@ export async function fetchWithRetry(
     } catch (err) {
       clearTimeout(timeoutId);
       lastErr = err;
+      const duration = Date.now() - attemptStartTime;
 
       if (attempt < maxRetries && isRetryableError(err)) {
         const status = (err as any).status || (err as any).statusCode || '-';
         const errMsg = (err as Error).message;
-        console.warn(`[fetchWithRetry] ${providerLabel} attempt ${attempt + 1}/${maxRetries + 1} failed [${status}]: ${errMsg}, retrying in ${retryIntervalMs}ms...`);
+        console.warn(`[fetchWithRetry] ${providerLabel}${reqTag} attempt ${attempt + 1}/${maxRetries + 1} failed [${status}] (${duration}ms): ${errMsg}, retrying in ${retryIntervalMs}ms...`);
         await new Promise((r) => setTimeout(r, retryIntervalMs));
         continue;
       }
 
+      console.error(`[fetchWithRetry] ${providerLabel}${reqTag} attempt ${attempt + 1}/${maxRetries + 1} final error [${(err as any)?.status || '-'}] (${duration}ms, endpoint: ${endpoint}): ${(err as Error)?.message}`);
       throw err;
     }
   }

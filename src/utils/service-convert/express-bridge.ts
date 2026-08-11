@@ -171,6 +171,17 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
       console.error(`[express-bridge] ChatSSE error:`, error.message);
       console.error(`[express-bridge] ChatSSE details:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
       try {
+        if (!res.headersSent) {
+          const status = (error as any).status || (error as any).statusCode || 504;
+          res.status(status).json({
+            error: {
+              message: error.message,
+              type: 'upstream_error',
+              status,
+            },
+          });
+          return;
+        }
         res.write(`event: error\ndata: ${JSON.stringify({ code: 'stream_error', message: error.message })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -807,7 +818,7 @@ export function createSSECallbacks(inputFormat: InputFormat, res: Response, opti
  */
 export async function executeProxy(
   proxy: BaseProxy<any, void, Record<string, unknown>>,
-  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number; modelId?: number },
+  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number; modelId?: number; requestId?: string },
   body: Record<string, unknown>,
   callbacks: SSECallbacks,
   clientRes?: Response,
@@ -818,6 +829,7 @@ export async function executeProxy(
       apiKey: config.apiKey,
       modelId: config.modelId,
       providerLabel: config.providerLabel || 'Proxy',
+      requestId: config.requestId,
       timeoutMs: config.timeoutMs || 300_000,
       maxRetries: config.maxRetries ?? 2,
     },

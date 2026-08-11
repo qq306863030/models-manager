@@ -91,9 +91,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin || '*';
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, OpenAI-Organization, OpenAI-Project');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, OpenAI-Organization, OpenAI-Project, X-Request-ID, Client-Request-Id, x-client-request-id');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Request-ID');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Request-ID, Client-Request-Id');
 
   // 支持 Chrome Private Network Access (PNA)
   // 当域名解析到内网 IP 时，Chrome 会发送 Private-Network 预检请求
@@ -107,6 +107,35 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     res.status(204).end();
     return;
   }
+  next();
+});
+
+// Request ID 与 耗时日志中间件（便于跟踪排查 Client Request Id 与 504 超时等异常）
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const incomingReqId =
+    (req.headers['client-request-id'] as string) ||
+    (req.headers['x-request-id'] as string) ||
+    (req.headers['x-client-request-id'] as string) ||
+    `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+  (req as any).requestId = incomingReqId;
+  (req as any).startTime = Date.now();
+
+  res.header('X-Request-ID', incomingReqId);
+  res.header('Client-Request-Id', incomingReqId);
+
+  res.on('finish', () => {
+    const duration = Date.now() - ((req as any).startTime || Date.now());
+    const status = res.statusCode;
+    const isError = status >= 400;
+    const logLine = `[HTTP] ${req.method} ${req.originalUrl} -> Status ${status} (${duration}ms) [ReqID: ${incomingReqId}]`;
+    if (isError) {
+      console.error(logLine);
+    } else {
+      console.log(logLine);
+    }
+  });
+
   next();
 });
 
