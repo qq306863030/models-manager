@@ -37,6 +37,55 @@ import { getMcpRecord, saveMcpRecord } from '@/api/mcpRecordService'
 
 defineOptions({ name: 'McpRecordDialog' })
 
+// 默认 MCP 记录配置：当用户没有保存过记录时，用这份默认 mcpServers 作为兜底。
+// 其中 ai-models-manager-* 三个 http 服务的 url 按当前用户动态拼接（与模型记忆页"使用说明"一致）
+const username = localStorage.getItem('auth_username') || 'default'
+const currentOrigin = window.location.origin
+const userMcpUrl = (key: 'memory' | 'skills' | 'docs') => `${currentOrigin}/${username}/${key}/mcp`
+
+const DEFAULT_MCP_RECORD = JSON.stringify({
+  mcpServers: {
+    'chrome-devtools': {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+    },
+    playwright: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', '@playwright/mcp@latest', '--cdp-endpoint=chrome'],
+      timeoutMs: 30000,
+    },
+    'deepseek-vision-mcp': {
+      command: 'npx',
+      args: ['-y', 'deepseek-vision-mcp@latest'],
+      env: {
+        DEEPSEEK_OPENAI_BASE_URL: 'http://xxx.com/v1',
+        DEEPSEEK_OPENAI_API_KEY: 'sk-123',
+        DEEPSEEK_OPENAI_MODEL: 'MiniMax-M3',
+      },
+    },
+    'ssh-remote-control-mcp': {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'ssh-remote-control-mcp@latest'],
+      env: { SSH_REMOTE_CONTROL_PORT: '11889' },
+    },
+    'ai-models-manager-memory': {
+      type: 'http',
+      url: userMcpUrl('memory'),
+    },
+    'ai-models-manager-skills': {
+      type: 'http',
+      url: userMcpUrl('skills'),
+    },
+    'ai-models-manager-docs': {
+      type: 'http',
+      url: userMcpUrl('docs'),
+    },
+  },
+}, null, 2)
+
 const dialogVisible = ref(false)
 const loading = ref(false)
 const editorRef = ref<HTMLDivElement>()
@@ -50,7 +99,7 @@ const mountEditor = (content: string) => {
   if (!editorRef.value) return
 
   const state = EditorState.create({
-    doc: content || '{}',
+    doc: content || DEFAULT_MCP_RECORD,
     extensions: [
       basicSetup,
       json(),
@@ -89,7 +138,7 @@ const loadRecord = async (): Promise<string> => {
     const res = await getMcpRecord()
     if (res.success && res.data?.content) return res.data.content
   } catch { /* ignore */ }
-  return '{}'
+  return DEFAULT_MCP_RECORD
 }
 
 const openDialog = async () => {
