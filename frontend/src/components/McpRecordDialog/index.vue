@@ -60,9 +60,9 @@ const DEFAULT_MCP_RECORD = JSON.stringify({
       command: 'npx',
       args: ['-y', 'deepseek-vision-mcp@latest'],
       env: {
-        DEEPSEEK_OPENAI_BASE_URL: 'http://xxx.com/v1',
-        DEEPSEEK_OPENAI_API_KEY: 'sk-123',
-        DEEPSEEK_OPENAI_MODEL: 'MiniMax-M3',
+        OPENAI_BASE_URL: 'http://xxx.com/v1',
+        OPENAI_API_KEY: 'sk-123',
+        OPENAI_MODEL: 'MiniMax-M3',
       },
     },
     'ssh-remote-control-mcp': {

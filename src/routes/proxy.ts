@@ -273,6 +273,9 @@ function buildChatParams(body: Record<string, unknown>): ChatRequestParams {
 }
 
 function modelSupportsVision(model: ModelRow): boolean {
+  if (model.model_name && model.model_name.toLowerCase().includes('deepseek')) {
+    return false
+  }
   const capabilities = parseModelCapabilities(model.capabilities);
   return capabilities.includes('vision');
 }
