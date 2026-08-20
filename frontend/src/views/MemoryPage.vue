@@ -29,6 +29,12 @@
             <el-icon><Reading /></el-icon>
             我的文档
           </el-button>
+          <el-button
+            :type="'files' === currentNav ? 'primary' : 'text'"
+            @click="handleNavSelect('files')">
+            <el-icon><FolderOpened /></el-icon>
+            我的文件
+          </el-button>
         </div>
       </div>
       <div class="header-right">
@@ -173,7 +179,7 @@ import {
 } from '@/api/agentMemoryService';
 import MemoryCard from '@/components/MemoryCard/index.vue';
 import MemoryDetailDialog from '@/components/MemoryDetailDialog/index.vue';
-import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument, Reading } from '@element-plus/icons-vue';
+import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument, Reading, FolderOpened } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -263,6 +269,8 @@ const handleNavSelect = (index: string) => {
     router.push('/memory/skills');
   } else if (index === 'memory-docs') {
     router.push('/memory/docs');
+  } else if (index === 'files') {
+    router.push('/files');
   }
 };
 

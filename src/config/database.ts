@@ -321,4 +321,38 @@ export function deleteAgentMemoryDocs(id: number, userId: number): boolean {
   return result.changes > 0;
 }
 
+// ========== 用户文件表 ==========
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    mime_type TEXT,
+    file_size INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`);
+
+export function getUserFilesList(userId: number): { id: number; original_name: string; stored_name: string; mime_type: string | null; file_size: number; created_at: string }[] {
+  return db.prepare('SELECT id, original_name, stored_name, mime_type, file_size, created_at FROM user_files WHERE user_id = ? ORDER BY id DESC').all(userId) as any[];
+}
+
+export function getUserFileById(id: number, userId: number): { id: number; original_name: string; stored_name: string; mime_type: string | null; file_size: number; created_at: string } | null {
+  return db.prepare('SELECT id, original_name, stored_name, mime_type, file_size, created_at FROM user_files WHERE id = ? AND user_id = ?').get(id, userId) as any || null;
+}
+
+export function createUserFile(originalName: string, storedName: string, mimeType: string | null, fileSize: number, userId: number): { id: number } {
+  const result = db.prepare('INSERT INTO user_files (user_id, original_name, stored_name, mime_type, file_size) VALUES (?, ?, ?, ?, ?)').run(userId, originalName, storedName, mimeType, fileSize);
+  return { id: result.lastInsertRowid as number };
+}
+
+export function deleteUserFile(id: number, userId: number): { stored_name: string } | null {
+  const file = db.prepare('SELECT stored_name FROM user_files WHERE id = ? AND user_id = ?').get(id, userId) as { stored_name: string } | undefined;
+  if (!file) return null;
+  db.prepare('DELETE FROM user_files WHERE id = ? AND user_id = ?').run(id, userId);
+  return { stored_name: file.stored_name };
+}
+
 export default db;

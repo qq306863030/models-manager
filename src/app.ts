@@ -13,6 +13,7 @@ import proxyRouter, { userRouter } from './routes/proxy';
 import authRouter from './routes/auth';
 import mcpRecordsRouter from './routes/mcpRecords';
 import agentMemoryRouter from './routes/agentMemory';
+import userFilesRouter from './routes/userFiles';
 import mcpSkillsRouter from './routes/mcpSkills';
 import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import mcpUserDocumentRouter from './routes/mcpUserDocument';
@@ -153,6 +154,7 @@ app.use('/api/token-stats', tokenStatsRouter);
 app.use('/api/llm-models', llmModelsRouter);
 app.use('/api/mcp-records', mcpRecordsRouter);
 app.use('/api/agent-memory', agentMemoryRouter);
+app.use('/api/user-files', userFilesRouter);
 
 // 服务端配置（供前端读取）
 app.get('/api/config', (req: Request, res: Response) => {
@@ -171,6 +173,7 @@ app.use('/login', (_req: Request, res: Response) => { res.sendFile(indexPath); }
 app.use('/change-password', (_req: Request, res: Response) => { res.sendFile(indexPath); });
 app.use('/user-manage', (_req: Request, res: Response) => { res.sendFile(indexPath); });
 app.use('/memory', (_req: Request, res: Response) => { res.sendFile(indexPath); });
+app.use('/files', (_req: Request, res: Response) => { res.sendFile(indexPath); });
 
 // 用户名前缀的代理路由：/:username/v1/* 和 /:username/api/*
 // 挂载到 /:username，Express 自动剥离 /:username 前缀，内部 router 收到 /v1/models

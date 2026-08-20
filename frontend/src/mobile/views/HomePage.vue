@@ -4,6 +4,7 @@
       <div class="navbar-title">AI模型管理</div>
       <div class="navbar-actions">
         <van-button size="small" @click="router.push('/m/memory/user')">记忆</van-button>
+        <van-button size="small" @click="router.push('/m/files')">文件</van-button>
         <van-button type="primary" size="small" @click="openAddDialog">添加</van-button>
         <van-button size="small" @click="openApiDialog">接口</van-button>
         <van-button size="small" @click="settingsDialogVisible = true">设置</van-button>

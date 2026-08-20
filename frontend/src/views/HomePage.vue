@@ -29,6 +29,12 @@
             <el-icon><Reading /></el-icon>
             我的文档
           </el-button>
+          <el-button
+            :type="currentNav === 'files' ? 'primary' : 'text'"
+            @click="handleNavSelect('files')">
+            <el-icon><FolderOpened /></el-icon>
+            我的文件
+          </el-button>
         </div>
       </div>
       <div class="header-right">
@@ -274,7 +280,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document, Reading } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document, Reading, FolderOpened } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -371,6 +377,8 @@ const handleNavSelect = (index: string) => {
     router.push('/memory/skills');
   } else if (index === 'memory-docs') {
     router.push('/memory/docs');
+  } else if (index === 'files') {
+    router.push('/files');
   }
 };
 
