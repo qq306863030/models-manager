@@ -67,37 +67,49 @@
         </template>
 
         <!-- 上传区域 -->
-        <el-upload
-          class="file-upload-area"
-          drag
-          multiple
-          :auto-upload="false"
-          :file-list="uploadQueue"
-          :on-change="handleFileChange"
-          :on-remove="handleRemoveFromQueue"
-          :before-upload="beforeUpload"
-          :limit="10"
-          :on-exceed="handleExceed"
-          accept="*"
+        <div
+          class="upload-drop-zone"
+          :class="{ dragging }"
+          @dragover.prevent="dragging = true"
+          @dragleave="dragging = false"
+          @drop.prevent="onDrop"
         >
+          <input
+            ref="fileInputRef"
+            type="file"
+            multiple
+            style="display: none"
+            @change="onFileSelect"
+          />
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
-          <div class="el-upload__text">
-            将文件拖到此处，或<em>点击上传</em>
+          <div class="upload-text">
+            将文件拖到此处，或<em class="upload-link" @click="fileInputRef?.click()">点击选择文件</em>
           </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              单个文件最大 200MB，最多同时选择 10 个文件
-            </div>
-          </template>
-        </el-upload>
+          <div class="upload-tip">单个文件最大 200MB，支持多文件同时上传</div>
+        </div>
 
-        <!-- 上传按钮 -->
-        <div v-if="uploadQueue.length > 0" class="upload-actions">
-          <el-button type="primary" :loading="uploading" @click="handleUploadAll">
-            <el-icon><Upload /></el-icon>
-            开始上传 ({{ uploadQueue.length }} 个文件)
-          </el-button>
-          <el-button @click="clearUploadQueue">清空</el-button>
+        <!-- 待上传文件列表 -->
+        <div v-if="uploadQueue.length > 0" class="upload-queue">
+          <div class="upload-queue-header">
+            <span>待上传 ({{ uploadQueue.length }} 个文件)</span>
+            <el-button text size="small" @click="uploadQueue = []">清空</el-button>
+          </div>
+          <div class="upload-queue-list">
+            <div v-for="(item, idx) in uploadQueue" :key="idx" class="upload-queue-item">
+              <el-icon><Document /></el-icon>
+              <span class="queue-file-name">{{ item.name }}</span>
+              <span class="queue-file-size">{{ formatSize(item.size) }}</span>
+              <el-button text type="danger" size="small" @click="uploadQueue.splice(idx, 1)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+          </div>
+          <div class="upload-actions">
+            <el-button type="primary" :loading="uploading" @click="handleUploadAll">
+              <el-icon><Upload /></el-icon>
+              开始上传
+            </el-button>
+          </div>
         </div>
 
         <!-- 上传进度 -->
@@ -154,7 +166,6 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import type { UploadFile, UploadRawFile } from 'element-plus';
 import { getUserFiles, uploadFile, downloadFile, deleteFile, type UserFileItem } from '@/api/userFilesService';
 import {
   Management, Document, Tools, Reading, FolderOpened,
@@ -171,10 +182,12 @@ const isAdmin = computed(() => {
 const currentNav = ref('files');
 const loading = ref(false);
 const fileList = ref<UserFileItem[]>([]);
-const uploadQueue = ref<UploadFile[]>([]);
+const uploadQueue = ref<File[]>([]);
 const uploading = ref(false);
 const uploadProgress = ref(0);
 const uploadStatusText = ref('');
+const dragging = ref(false);
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 const totalSize = computed(() => fileList.value.reduce((sum, f) => sum + f.file_size, 0));
 
@@ -217,33 +230,33 @@ const fetchFiles = async () => {
   }
 };
 
-// 上传前校验
-const beforeUpload = (rawFile: UploadRawFile) => {
+// 过滤并添加文件到上传队列
+const addFilesToQueue = (files: FileList | File[]) => {
   const maxSize = 200 * 1024 * 1024;
-  if (rawFile.size > maxSize) {
-    ElMessage.error(`文件 "${rawFile.name}" 超过 200MB 限制`);
-    return false;
+  const arr = Array.from(files);
+  for (const f of arr) {
+    if (f.size > maxSize) {
+      ElMessage.error(`文件 "${f.name}" 超过 200MB 限制`);
+      continue;
+    }
+    // 避免重复添加
+    if (!uploadQueue.value.some(q => q.name === f.name && q.size === f.size)) {
+      uploadQueue.value.push(f);
+    }
   }
-  return true;
 };
 
-const handleFileChange = (file: UploadFile) => {
-  if (file.raw && file.raw.size > 200 * 1024 * 1024) {
-    ElMessage.error(`文件 "${file.name}" 超过 200MB 限制`);
-    uploadQueue.value = uploadQueue.value.filter(f => f.uid !== file.uid);
-  }
+// 点击选择文件
+const onFileSelect = (e: Event) => {
+  const input = e.target as HTMLInputElement;
+  if (input.files) addFilesToQueue(input.files);
+  input.value = '';
 };
 
-const handleRemoveFromQueue = (file: UploadFile) => {
-  uploadQueue.value = uploadQueue.value.filter(f => f.uid !== file.uid);
-};
-
-const handleExceed = () => {
-  ElMessage.warning('最多同时选择 10 个文件');
-};
-
-const clearUploadQueue = () => {
-  uploadQueue.value = [];
+// 拖拽上传
+const onDrop = (e: DragEvent) => {
+  dragging.value = false;
+  if (e.dataTransfer?.files) addFilesToQueue(e.dataTransfer.files);
 };
 
 // 批量上传
@@ -257,10 +270,9 @@ const handleUploadAll = async () => {
   let failCount = 0;
 
   for (const file of uploadQueue.value) {
-    if (!file.raw) continue;
     uploadStatusText.value = `正在上传: ${file.name} (${completed + 1}/${total})`;
     try {
-      await uploadFile(file.raw);
+      await uploadFile(file);
       successCount++;
     } catch (err: any) {
       failCount++;
@@ -429,11 +441,18 @@ onMounted(() => {
   color: #909399;
 }
 
-.file-upload-area {
+.upload-drop-zone {
+  border: 2px dashed #dcdfe6;
+  border-radius: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.3s, background 0.3s;
   margin-bottom: 16px;
 
-  :deep(.el-upload-dragger) {
-    padding: 32px 0;
+  &:hover, &.dragging {
+    border-color: #409eff;
+    background: #ecf5ff;
   }
 
   .upload-icon {
@@ -441,12 +460,76 @@ onMounted(() => {
     color: #c0c4cc;
     margin-bottom: 8px;
   }
+
+  .upload-text {
+    font-size: 14px;
+    color: #606266;
+  }
+
+  .upload-link {
+    color: #409eff;
+    cursor: pointer;
+    font-style: normal;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .upload-tip {
+    font-size: 12px;
+    color: #909399;
+    margin-top: 8px;
+  }
 }
 
-.upload-actions {
-  display: flex;
-  gap: 8px;
+.upload-queue {
   margin-bottom: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  overflow: hidden;
+
+  .upload-queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #f5f7fa;
+    font-size: 14px;
+    font-weight: 500;
+    color: #303133;
+  }
+
+  .upload-queue-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .upload-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid #ebeef5;
+    font-size: 13px;
+
+    .queue-file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .queue-file-size {
+      color: #909399;
+      white-space: nowrap;
+    }
+  }
+
+  .upload-actions {
+    padding: 12px 16px;
+    border-top: 1px solid #ebeef5;
+  }
 }
 
 .upload-progress {
