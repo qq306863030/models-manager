@@ -24,9 +24,9 @@ const upload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
 });
 
-// 从请求头获取用户 ID
+// 从请求头或 Query 参数获取用户 ID
 function getUserIdFromHeader(req: Request): number | null {
-  const username = req.headers['x-username'] as string;
+  const username = (req.headers['x-username'] as string) || (req.query.username as string) || (req.query.user as string);
   if (!username) return null;
   const db = require('../config/database').default;
   const user = db.prepare('SELECT id FROM users WHERE name = ?').get(username) as { id: number } | undefined;
@@ -122,12 +122,18 @@ router.get('/:id/download', (req: Request, res: Response) => {
       res.status(404).json({ success: false, message: '文件已丢失' });
       return;
     }
-    // 设置下载文件名（URL 编码处理中文）
+    // 设置下载文件名（同时兼容 ASCII 与 UTF-8 编码中文文件名）
+    const safeAsciiName = file.original_name.replace(/[^\x20-\x7E]/g, '_');
     const encodedName = encodeURIComponent(file.original_name);
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodedName}`);
     res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
     res.setHeader('Content-Length', file.file_size);
     const stream = fs.createReadStream(filePath);
+    stream.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: '读取文件失败' });
+      }
+    });
     stream.pipe(res);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message || '下载失败' });

@@ -21,28 +21,23 @@ export const uploadFile = (file: File) => {
   });
 };
 
-export const downloadFile = async (id: number, fileName: string) => {
-  const token = localStorage.getItem('auth_token');
-  const username = localStorage.getItem('auth_username');
-  const response = await fetch(`/api/user-files/${id}/download`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(username ? { 'X-Username': username } : {}),
-    },
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ message: '下载失败' }));
-    throw new Error(err.message || '下载失败');
-  }
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+export const downloadFile = (id: number, _fileName?: string) => {
+  const username = localStorage.getItem('auth_username') || '';
+  const token = localStorage.getItem('auth_token') || '';
+  
+  // 拼接带有鉴权信息的直链，使用浏览器原生下载能力
+  const params = new URLSearchParams();
+  if (username) params.append('username', username);
+  if (token) params.append('token', token);
+  
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  const downloadUrl = `/api/user-files/${id}/download${queryStr}`;
+  
   const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
+  a.href = downloadUrl;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 };
 
 export const deleteFile = (id: number) =>
