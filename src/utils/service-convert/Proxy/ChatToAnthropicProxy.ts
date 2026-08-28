@@ -10,6 +10,7 @@ import type { ChatCompletionsProxyInput, SSECallbacks } from './common/types';
 import { appendPartialAssistantContent, streamWithRetry } from './common/sse-utils';
 import { fetchWithRetry } from './common/fetch-with-retry';
 import { chatRequestToAnthropicRequest } from './common/convert-utils';
+import { optimizeThinkingParams, rectifyThinkingSignature } from './common/thinking-utils';
 
 export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxyInput, void, Record<string, unknown>> {
   private callbacks?: SSECallbacks;
@@ -44,6 +45,8 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
     const anthropicBody = chatRequestToAnthropicRequest(input.body);
     // 强制流式
     anthropicBody.stream = true;
+    // 优化思考参数
+    optimizeThinkingParams(anthropicBody);
     return anthropicBody;
   }
 

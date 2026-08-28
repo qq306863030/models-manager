@@ -134,6 +134,8 @@ export interface ChatCompletionsRequestBody {
   }>;
   tool_choice?: string | { type: string; function?: { name: string } };
   stop?: string[];
+  reasoning_effort?: 'none' | 'low' | 'medium' | 'high';
+  thinking?: boolean;
   [key: string]: unknown;
 }
 

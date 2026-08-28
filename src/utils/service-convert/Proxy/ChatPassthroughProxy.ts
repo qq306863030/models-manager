@@ -255,11 +255,14 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
           total_tokens: 0,
         });
       }
-    }
 
-    // 通知完成（写 [DONE] + res.end()），清除内存日志
-    clearLog(logBuffer);
-    this.callbacks?.onDone?.();
+      // 透传模式下直接结束响应，不调用 callbacks.onDone()
+      // 因为上游已经发送了完整的 [DONE] 和 finish_reason，回调会重复发送导致客户端报错
+      clearLog(logBuffer);
+      if (!clientRes.writableEnded) {
+        clientRes.end();
+      }
+    }
   }
 
   /**

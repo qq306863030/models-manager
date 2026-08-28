@@ -389,22 +389,41 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
       // 为当前 model 创建回调（传入 modelId 以自动跟踪 token）
       callbacks = createSSECallbacks('chat' as InputFormat, res, { modelId: model.id, promptTokens, modelName: model.model_name });
 
-      const messagesForModel = modelSupportsVision(model)
-        ? params.messages
-        : await convertImageUrlToTextParts(params.messages, `${req.protocol}://${req.get('host')}`);
+      // 对于 chat → openai-chat 同格式透传，使用原始消息数组
+      // 避免 convertToOpenAIChatMessages 破坏消息结构（如丢失 reasoning_content、multimodal content parts 等）
+      // 对于需要格式转换的路径（chat → responses / chat → anthropic），仍使用处理后的消息
+      let messagesForModel: Array<Record<string, unknown>>;
+      if (providerType === 'openai-chat') {
+        // 同格式透传：直接使用原始消息，仅做图片转换（如果模型不支持 vision）
+        messagesForModel = (body.messages as unknown as Array<Record<string, unknown>>) || [];
+        if (!modelSupportsVision(model)) {
+          messagesForModel = (await convertImageUrlToTextParts(messagesForModel as unknown as GenericMessage[], `${req.protocol}://${req.get('host')}`)) as unknown as Array<Record<string, unknown>>;
+        }
+      } else {
+        // 格式转换：使用经过 convertToOpenAIChatMessages 处理后的消息
+        const processed = modelSupportsVision(model)
+          ? params.messages
+          : await convertImageUrlToTextParts(params.messages, `${req.protocol}://${req.get('host')}`);
+        messagesForModel = processed as unknown as Array<Record<string, unknown>>;
+      }
 
-      const proxyBody: Record<string, unknown> = stripUndefined({
-        model: model.model_name,
-        messages: messagesForModel as unknown as Array<Record<string, unknown>>,
-        max_tokens: params.maxTokens,
-        temperature: params.temperature,
-        top_p: params.topP,
-        tools: params.tools as unknown as Array<Record<string, unknown>> | undefined,
-        tool_choice: params.toolChoice,
+      // 对于同格式透传 (chat → openai-chat)，尽量保留原始请求体的所有字段
+      // 只替换必要的字段（model、stream），避免丢失 reasoning_effort、response_format 等
+      const proxyBody: Record<string, unknown> = {
+        ...body,  // 保留原始请求体的所有字段
+        model: model.model_name,  // 替换模型名
+        messages: messagesForModel as unknown as Array<Record<string, unknown>>,  // 使用处理后的消息
         stream: true,
-        stream_options: { include_usage: true },
-      });
-      if (params.system) proxyBody.system = params.system;
+      };
+      // 注入 stream_options 以获取 usage 数据
+      if (!proxyBody.stream_options) {
+        proxyBody.stream_options = { include_usage: true };
+      }
+      // 如果原始请求未设置 max_tokens/user_settings 有强制限制时才覆盖
+      const settingsMaxToken = getUserSettings().max_token;
+      if (settingsMaxToken > 0) {
+        proxyBody.max_tokens = settingsMaxToken;
+      }
 
       // Anthropic 原生 API 路径：调用 /v1/messages，不走 Chat hub
       if (providerType === 'anthropic') {

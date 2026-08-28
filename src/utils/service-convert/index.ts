@@ -6,9 +6,7 @@ import ResponsesProxy from './Proxy/ResponsesProxy';
 import AnthropicProxy from './Proxy/AnthropicProxy';
 import ChatCompletionsToResponsesProxy from './Proxy/ChatCompletionsToResponsesProxy';
 import ResponsesToChatProxy from './Proxy/ResponsesToChatProxy';
-import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
 import AnthropicToChatProxy from './Proxy/AnthropicToChatProxy';
-import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
 import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
 import ChatPassthroughProxy from './Proxy/ChatPassthroughProxy';
 
@@ -18,9 +16,7 @@ export { default as ResponsesProxy } from './Proxy/ResponsesProxy';
 export { default as AnthropicProxy } from './Proxy/AnthropicProxy';
 export { default as ChatCompletionsToResponsesProxy } from './Proxy/ChatCompletionsToResponsesProxy';
 export { default as ResponsesToChatProxy } from './Proxy/ResponsesToChatProxy';
-export { default as ResponsesToAnthropicProxy } from './Proxy/ResponsesToAnthropicProxy';
 export { default as AnthropicToChatProxy } from './Proxy/AnthropicToChatProxy';
-export { default as AnthropicToResponsesProxy } from './Proxy/AnthropicToResponsesProxy';
 export { default as ChatToAnthropicProxy } from './Proxy/ChatToAnthropicProxy';
 export { default as ChatPassthroughProxy } from './Proxy/ChatPassthroughProxy';
 
@@ -105,20 +101,6 @@ const chatToAnthropicConverter: ServiceConverter = {
     Converter: ChatToAnthropicProxy
 }
 
-// --- Anthropic ↔ Responses ---
-
-const anthropicToResponsesConverter: ServiceConverter = {
-    inputType: SERVICE_TYPE.Anthropic,
-    outputType: SERVICE_TYPE.Responses,
-    Converter: AnthropicToResponsesProxy
-}
-
-const responsesToAnthropicConverter: ServiceConverter = {
-    inputType: SERVICE_TYPE.Responses,
-    outputType: SERVICE_TYPE.Anthropic,
-    Converter: ResponsesToAnthropicProxy
-}
-
 // ===== 注册所有转换器 =====
 
 export const serviceConverters: ServiceConverter[] = [
@@ -132,7 +114,4 @@ export const serviceConverters: ServiceConverter[] = [
     // Anthropic ↔ Chat Completions
     anthropicToChatConverter,
     chatToAnthropicConverter,
-    // Anthropic ↔ Responses
-    anthropicToResponsesConverter,
-    responsesToAnthropicConverter,
 ];

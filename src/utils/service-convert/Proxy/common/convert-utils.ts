@@ -671,6 +671,29 @@ export function anthropicRequestToChatRequest(
       : body.stop_sequences;
   }
 
+  // thinking → reasoning_effort（Anthropic 思考参数映射到 Chat Completions 标准参数）
+  if (body.thinking && typeof body.thinking === 'object') {
+    const thinking = body.thinking as Record<string, unknown>;
+    if (thinking.type === 'disabled') {
+      result.reasoning_effort = 'none';
+    } else if (thinking.type === 'enabled') {
+      const budgetTokens = thinking.budget_tokens as number | undefined;
+      if (budgetTokens !== undefined) {
+        if (budgetTokens <= 1024) {
+          result.reasoning_effort = 'low';
+        } else if (budgetTokens <= 8192) {
+          result.reasoning_effort = 'medium';
+        } else {
+          result.reasoning_effort = 'high';
+        }
+      } else {
+        result.reasoning_effort = 'high';
+      }
+    } else if (thinking.type === 'adaptive') {
+      result.reasoning_effort = 'high';
+    }
+  }
+
   // stream
   if (body.stream !== undefined) result.stream = body.stream;
 

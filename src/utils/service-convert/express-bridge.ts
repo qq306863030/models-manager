@@ -17,8 +17,6 @@ import ChatCompletionsToResponsesProxy from './Proxy/ChatCompletionsToResponsesP
 import ResponsesToChatProxy from './Proxy/ResponsesToChatProxy';
 import AnthropicToChatProxy from './Proxy/AnthropicToChatProxy';
 import ChatToAnthropicProxy from './Proxy/ChatToAnthropicProxy';
-import AnthropicToResponsesProxy from './Proxy/AnthropicToResponsesProxy';
-import ResponsesToAnthropicProxy from './Proxy/ResponsesToAnthropicProxy';
 import ChatPassthroughProxy from './Proxy/ChatPassthroughProxy';
 import { trackTokenUsage } from '../tokenTracker';
 
@@ -787,11 +785,13 @@ export function pickProxy(
 
   if (inputFormat === 'responses' && providerType === 'openai-responses') return new ResponsesProxy();
   if (inputFormat === 'responses' && providerType === 'openai-chat') return new ResponsesToChatProxy();
-  if (inputFormat === 'responses' && providerType === 'anthropic') return new ResponsesToAnthropicProxy();
+  // responses → anthropic 需要通过 chat 中间格式，当前不支持直接转换
+  if (inputFormat === 'responses' && providerType === 'anthropic') return null;
 
   if (inputFormat === 'anthropic' && providerType === 'anthropic') return new AnthropicProxy();
   if (inputFormat === 'anthropic' && providerType === 'openai-chat') return new AnthropicToChatProxy();
-  if (inputFormat === 'anthropic' && providerType === 'openai-responses') return new AnthropicToResponsesProxy();
+  // anthropic → responses 需要通过 chat 中间格式，当前不支持直接转换
+  if (inputFormat === 'anthropic' && providerType === 'openai-responses') return null;
 
   return null;
 }
@@ -845,9 +845,9 @@ export async function executeProxy(
     await proxy.execute(input, callbacks);
   } else if (proxy instanceof ChatCompletionsProxy || proxy instanceof ChatCompletionsToResponsesProxy || proxy instanceof ChatToAnthropicProxy) {
     await (proxy as any).execute(input, callbacks);
-  } else if (proxy instanceof ResponsesProxy || proxy instanceof ResponsesToChatProxy || proxy instanceof ResponsesToAnthropicProxy) {
+  } else if (proxy instanceof ResponsesProxy || proxy instanceof ResponsesToChatProxy) {
     await (proxy as any).execute(input, callbacks);
-  } else if (proxy instanceof AnthropicProxy || proxy instanceof AnthropicToChatProxy || proxy instanceof AnthropicToResponsesProxy) {
+  } else if (proxy instanceof AnthropicProxy || proxy instanceof AnthropicToChatProxy) {
     await (proxy as any).execute(input, callbacks);
   } else {
     await (proxy as any).execute(input, callbacks);
