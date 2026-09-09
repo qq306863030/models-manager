@@ -56,6 +56,7 @@ import OpenAI from 'openai';
 import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type ProviderType } from '../utils/service-convert/express-bridge';
 import ChatPassthroughProxy from '../utils/service-convert/Proxy/ChatPassthroughProxy';
 import { writeDebugLog, writeSSEDebugLog } from '../utils/debug-logger';
+import { extractConversationSeed } from '../utils/opencode-adapter';
 
 const router = Router();
 
@@ -345,6 +346,8 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
+  // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
+  (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 
   // 统一请求日志（所有路径：流式/非流式均记录）
   writeDebugLog(requestModelName, 'request', {
@@ -489,6 +492,7 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
           modelId: model.id,
           providerLabel: `Chat→${providerType}`,
           requestId: (req as any).requestId,
+          sessionId: (req as any).opencodeSessionSeed,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks, res);
 
@@ -660,6 +664,8 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
   const body = req.body as Record<string, unknown>;
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
+  // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
+  (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
@@ -752,6 +758,7 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
           apiKey: model.api_key,
           providerLabel: `Responses→${providerType}`,
           requestId: (req as any).requestId,
+          sessionId: (req as any).opencodeSessionSeed,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 
@@ -805,6 +812,8 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
 
   // 判断是否为流式请求（默认开启流式）
   const isStream = body.stream !== false;
+  // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
+  (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 
   const ordered = getOrderedModels(requestModelName, userId);
   if (ordered.length === 0) {
@@ -862,6 +871,7 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
           apiKey: model.api_key,
           providerLabel: `Anthropic→${providerType}`,
           requestId: (req as any).requestId,
+          sessionId: (req as any).opencodeSessionSeed,
           // 流式请求不设 timeout，让 Proxy 类使用默认超时（5 分钟）
         }, proxyBody, callbacks);
 

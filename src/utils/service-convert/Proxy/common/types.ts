@@ -102,6 +102,10 @@ export interface ProxyRequestConfig {
   timeoutMs?: number;
   /** 最大重试次数，默认 2 */
   maxRetries?: number;
+  /** 请求 ID（Tracing ID，来自入站 Client-Request-Id） */
+  requestId?: string;
+  /** 会话种子（opencode.ai 稳定会话 ID 使用） */
+  sessionId?: string;
 }
 
 // ========== Chat Completions 代理类型 ==========

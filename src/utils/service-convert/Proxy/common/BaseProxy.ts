@@ -81,6 +81,8 @@ export default abstract class BaseProxy<TInput = any, TOutput = any, TBody = Rec
       timeoutMs,
       maxRetries: config?.maxRetries ?? 2,
       providerLabel: config?.providerLabel || 'Upstream',
+      requestId: config?.requestId,
+      sessionId: config?.sessionId || config?.requestId,
     });
 
     return response;

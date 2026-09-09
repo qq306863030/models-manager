@@ -106,6 +106,8 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
       timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
       maxRetries: input.config.maxRetries ?? 2,
       providerLabel,
+      requestId: input.config.requestId,
+      sessionId: input.config.sessionId || input.config.requestId,
     });
 
     if (!initialResponse.ok) {
@@ -148,6 +150,8 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
           timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
           maxRetries: 0, // 由 streamWithRetry 控制重试
           providerLabel,
+          requestId: input.config.requestId,
+          sessionId: input.config.sessionId || input.config.requestId,
         });
       },
       (reader, cbs) => parseResponsesStream(reader, cbs),
@@ -249,6 +253,8 @@ export default class ResponsesProxy extends BaseProxy<ResponsesProxyInput, void,
       timeoutMs: optimized.config.timeoutMs || DEFAULT_TIMEOUT_MS,
       maxRetries: optimized.config.maxRetries ?? 2,
       providerLabel: optimized.config.providerLabel || DEFAULT_PROVIDER_LABEL,
+      requestId: optimized.config.requestId,
+      sessionId: optimized.config.sessionId || optimized.config.requestId,
     });
 
     if (!response.ok) {

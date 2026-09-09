@@ -10,6 +10,7 @@
 
 import { ProxyAgent } from 'undici';
 import { PROXY_URL } from '../../../model-provider';
+import { isOpencodeUrl, getOpencodeUserAgent, resolveOpencodeSessionId } from '../../../opencode-adapter';
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_INTERVAL_MS = 500;
@@ -61,6 +62,8 @@ export interface FetchWithRetryOptions extends RequestInit {
   providerLabel?: string;
   /** 请求 ID (Tracing ID) */
   requestId?: string;
+  /** 会话种子（用于 opencode.ai 的 x-opencode-session 稳定会话 ID） */
+  sessionId?: string;
   /**
    * 响应校验函数 — 在响应成功返回后被调用，可检查响应内容。
    * 如果校验失败，抛出的错误会被 isRetryableError 判断，
@@ -86,6 +89,7 @@ export async function fetchWithRetry(
     retryIntervalMs = DEFAULT_INTERVAL_MS,
     providerLabel = 'Upstream',
     requestId,
+    sessionId,
     validateResponse,
     ...fetchOptions
   } = options;
@@ -99,8 +103,25 @@ export async function fetchWithRetry(
     const reqTag = requestId ? ` [ReqID: ${requestId}]` : '';
 
     try {
+      // 合并请求头：保留调用方传入的 headers，并根据上游域名补充适配头
+      const mergedHeaders = new Headers((fetchOptions.headers ?? {}) as any);
+      if (!mergedHeaders.has('Content-Type')) {
+        mergedHeaders.set('Content-Type', 'application/json');
+      }
+
+      // opencode.ai 特殊适配：
+      // - 使用自身专属的 User-Agent（每天从 30 个候选中抽取 1 个），避免被识别为通用 SDK/HTTP 库流量
+      // - 携带 x-opencode-session 稳定会话 ID（相同种子 → 相同会话），用于上游路由与提示词缓存
+      if (isOpencodeUrl(endpoint)) {
+        mergedHeaders.set('User-Agent', getOpencodeUserAgent());
+        if (!mergedHeaders.has('x-opencode-session')) {
+          mergedHeaders.set('x-opencode-session', resolveOpencodeSessionId(sessionId || requestId));
+        }
+      }
+
       const response = await fetch(endpoint, {
         ...fetchOptions,
+        headers: mergedHeaders,
         signal: controller.signal,
         ...(proxyDispatcher ? { dispatcher: proxyDispatcher as any } : {}),
       });

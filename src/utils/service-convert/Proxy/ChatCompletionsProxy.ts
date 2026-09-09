@@ -109,6 +109,8 @@ export default class ChatCompletionsProxy extends BaseProxy<ChatCompletionsProxy
         timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
+        requestId: input.config.requestId,
+        sessionId: input.config.sessionId || input.config.requestId,
       }),
       (reader, cbs) => parseChatCompletionsStream(reader, cbs),
       this.callbacks || {},
@@ -155,6 +157,8 @@ export default class ChatCompletionsProxy extends BaseProxy<ChatCompletionsProxy
       timeoutMs: optimized.config.timeoutMs || DEFAULT_TIMEOUT_MS,
       maxRetries: optimized.config.maxRetries ?? 2,
       providerLabel: optimized.config.providerLabel || DEFAULT_PROVIDER_LABEL,
+      requestId: optimized.config.requestId,
+      sessionId: optimized.config.sessionId || optimized.config.requestId,
     });
 
     if (!response.ok) {

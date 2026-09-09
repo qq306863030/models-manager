@@ -94,6 +94,8 @@ export default class ChatCompletionsToResponsesProxy extends BaseProxy<ChatCompl
         timeoutMs: input.config.timeoutMs || DEFAULT_TIMEOUT_MS,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
+        requestId: input.config.requestId,
+        sessionId: input.config.sessionId || input.config.requestId,
       }),
       (reader, cbs) => parseChatCompletionsStream(reader, cbs),
       this.callbacks || {},

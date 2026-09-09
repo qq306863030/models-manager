@@ -70,6 +70,8 @@ export default class ChatToAnthropicProxy extends BaseProxy<ChatCompletionsProxy
         timeoutMs: input.config.timeoutMs || 300_000,
         maxRetries: input.config.maxRetries ?? 2,
         providerLabel,
+        requestId: input.config.requestId,
+        sessionId: input.config.sessionId || input.config.requestId,
       }),
       (reader, cbs) => this.parseAnthropicStream(reader, cbs),
       this.callbacks || {},

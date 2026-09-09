@@ -818,7 +818,7 @@ export function createSSECallbacks(inputFormat: InputFormat, res: Response, opti
  */
 export async function executeProxy(
   proxy: BaseProxy<any, void, Record<string, unknown>>,
-  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number; modelId?: number; requestId?: string },
+  config: { baseUrl: string; apiKey: string; providerLabel: string; timeoutMs?: number; maxRetries?: number; modelId?: number; requestId?: string; sessionId?: string },
   body: Record<string, unknown>,
   callbacks: SSECallbacks,
   clientRes?: Response,
@@ -830,6 +830,7 @@ export async function executeProxy(
       modelId: config.modelId,
       providerLabel: config.providerLabel || 'Proxy',
       requestId: config.requestId,
+      sessionId: config.sessionId || config.requestId,
       timeoutMs: config.timeoutMs || 300_000,
       maxRetries: config.maxRetries ?? 2,
     },

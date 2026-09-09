@@ -14,6 +14,7 @@ import OpenAI from 'openai';
 import { getUserSettings as getDbUserSettings } from '../config/database';
 import { stripThinkingTags } from './thinking';
 import * as ConvertUtils from './service-convert/Proxy/common/convert-utils';
+import { isOpencodeUrl, getOpencodeUserAgent, resolveOpencodeSessionId } from './opencode-adapter';
 
 // ========== 类型定义 ==========
 
@@ -187,6 +188,16 @@ export function createModelProvider(model: ModelRow): AIProvider {
 
   console.log(`[DIAG] createModelProvider | id=${model.id} name="${model.name}" model_name="${modelName}" api_format=${model.api_format} baseUrl="${baseURL}"`);
 
+  // opencode.ai 要求：发送编程 Agent 流量时使用自身专属的 user agent 与稳定会话 ID。
+  // SDK 直连路径没有请求级上下文，以 baseURL 作为稳定种子保证同一上游的会话 ID 不变。
+  const openAIOptions: Record<string, unknown> = { baseURL, apiKey: model.api_key };
+  if (isOpencodeUrl(baseURL)) {
+    openAIOptions.defaultHeaders = {
+      'User-Agent': getOpencodeUserAgent(),
+      'x-opencode-session': resolveOpencodeSessionId(baseURL),
+    };
+  }
+
   switch (model.api_format) {
     case API_FORMAT.ANTHROPIC: {
       const anthropicBaseURL = baseURL.replace(/\/v1$/, '');
@@ -194,11 +205,11 @@ export function createModelProvider(model: ModelRow): AIProvider {
       return { type: 'anthropic', client, modelName };
     }
     case API_FORMAT.OPENAI_RESPONSES: {
-      const client = new OpenAI({ baseURL, apiKey: model.api_key });
+      const client = new OpenAI(openAIOptions as ConstructorParameters<typeof OpenAI>[0]);
       return { type: 'openai-responses', client, modelName };
     }
     default: {
-      const client = new OpenAI({ baseURL, apiKey: model.api_key });
+      const client = new OpenAI(openAIOptions as ConstructorParameters<typeof OpenAI>[0]);
       return { type: 'openai-chat', client, modelName };
     }
   }

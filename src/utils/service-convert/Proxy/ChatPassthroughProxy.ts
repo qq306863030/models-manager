@@ -100,6 +100,8 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
         maxRetries: input.config.maxRetries ?? 3,
         retryIntervalMs: 500,
         providerLabel,
+        requestId: input.config.requestId,
+        sessionId: input.config.sessionId || input.config.requestId,
         // 校验响应内容：检查是否有 choices（VS Code 会因空响应报错）
         validateResponse: async (fetchResponse: globalThis.Response) => {
           const contentType = (fetchResponse.headers.get('Content-Type') || '').toLowerCase();
