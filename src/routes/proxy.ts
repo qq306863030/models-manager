@@ -58,8 +58,14 @@ import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type Pro
 import ChatPassthroughProxy from '../utils/service-convert/Proxy/ChatPassthroughProxy';
 import { writeDebugLog, writeSSEDebugLog } from '../utils/debug-logger';
 import { extractConversationSeed } from '../utils/opencode-adapter';
+import { injectMemoryAndTools } from '../utils/prompt-injector';
 
 const router = Router();
+
+export interface RequestWithUser extends Request {
+  proxyUsername?: string;
+  proxyUserId?: number;
+}
 
 // ========== 用户设置辅助 ==========
 
@@ -346,6 +352,10 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
 
 async function handleChatCompletions(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const reqWithUser = req as RequestWithUser;
+  const username = reqWithUser.proxyUsername || (req.params as Record<string, string>)?.username;
+  injectMemoryAndTools(body, userId, username);
+
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
   // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
@@ -664,6 +674,10 @@ function toProviderType(type: string): ProviderType {
 
 async function handleResponses(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const reqWithUser = req as RequestWithUser;
+  const username = reqWithUser.proxyUsername || (req.params as Record<string, string>)?.username;
+  injectMemoryAndTools(body, userId, username);
+
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
   // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
@@ -810,6 +824,10 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
  */
 async function handleAnthropicMessages(req: Request, res: Response, userId?: number): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const reqWithUser = req as RequestWithUser;
+  const username = reqWithUser.proxyUsername || (req.params as Record<string, string>)?.username;
+  injectMemoryAndTools(body, userId, username);
+
   const requestModelName = (body.model as string) || '';
 
   // 判断是否为流式请求（默认开启流式）
@@ -982,11 +1000,6 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
 // ========== 用户名前缀路由 ==========
 
 const userRouter = Router({ mergeParams: true });
-
-interface RequestWithUser extends Request {
-  proxyUsername?: string;
-  proxyUserId?: number;
-}
 
 // 记录用户名到 req 上，并查询 userId
 userRouter.use((req: Request, _res: Response, next) => {
