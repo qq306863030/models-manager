@@ -80,15 +80,37 @@
           :close-on-click-modal="false"
           @close="resetAddForm">
           <el-form :model="addForm" label-width="100px">
-            <el-form-item label="标题">
-              <el-input v-model="addForm.description" placeholder="输入标题" maxlength="500" />
+            <el-form-item :label="isUser ? '记忆类别' : '标题'">
+              <el-select
+                v-if="isUser"
+                v-model="addForm.description"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="请选择或输入记忆类别"
+                style="width: 100%;"
+                @change="handleCategoryChange">
+                <el-option
+                  v-for="cat in userCategoryOptions"
+                  :key="cat.value"
+                  :label="cat.label"
+                  :value="cat.value" />
+              </el-select>
+              <el-input v-else v-model="addForm.description" placeholder="输入标题" maxlength="500" />
+            </el-form-item>
+            <el-form-item v-if="isUser && addForm.description === '用户系统设置'" style="margin-top: -10px;">
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+                description="建议记录：用户操作系统中的项目及描述、常用的远程服务器地址/IP、部署的项目目录、常用的 Docker 容器及描述。" />
             </el-form-item>
             <el-form-item label="内容">
               <el-input
                 v-model="addForm.content"
                 type="textarea"
                 :rows="8"
-                placeholder="输入内容"
+                :placeholder="isUser && addForm.description === '用户系统设置' ? '例如：\n- 本地项目：models-manager (模型中转与管理服务)\n- 常用服务器：192.168.1.100 (部署生产机)\n- 部署目录：/opt/apps/models-manager\n- 常用 Docker 容器：nginx (网关反代), redis (会话缓存), mysql8 (业务库)' : '输入内容'"
                 maxlength="100000"
                 show-word-limit />
             </el-form-item>
@@ -259,6 +281,23 @@ const addLoading = ref(false);
 const addForm = ref({ description: '', content: '' });
 const detailDialogRef = ref<InstanceType<typeof MemoryDetailDialog> | null>(null);
 let fetchId = 0; // 用于取消旧请求
+
+const userCategoryOptions = [
+  { label: '用户系统设置（项目/服务器/部署目录/Docker容器）', value: '用户系统设置' },
+  { label: '用户称呼', value: '用户称呼' },
+  { label: '用户操作习惯', value: '用户操作习惯' },
+  { label: '用户编码习惯', value: '用户编码习惯' },
+  { label: '用户个人偏好', value: '用户个人偏好' },
+  { label: 'AI人格设定', value: 'AI人格设定' },
+  { label: 'AI长期计划', value: 'AI长期计划' },
+  { label: 'AI其他记忆', value: 'AI其他记忆' },
+];
+
+const handleCategoryChange = (val: string) => {
+  if (val === '用户系统设置' && !addForm.value.content?.trim()) {
+    addForm.value.content = `### 1. 本地项目\n- 项目名称：\n  本地路径：\n  项目描述：\n\n### 2. 常用远程服务器\n- 地址/IP：\n  用途与环境：\n\n### 3. 项目部署目录\n- 部署路径：\n\n### 4. 常用 Docker 容器\n- 容器名称：\n  用途描述：`;
+  }
+};
 
 const handleNavSelect = (index: string) => {
   if (index === 'home') {

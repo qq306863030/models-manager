@@ -20,6 +20,7 @@ declare module 'vue' {
     MemoryCard: typeof import('./src/components/MemoryCard/index.vue')['default']
     MemoryDetailDialog: typeof import('./src/components/MemoryDetailDialog/index.vue')['default']
     ModelCard: typeof import('./src/components/ModelCard/index.vue')['default']
+    RequestLogDrawer: typeof import('./src/components/RequestLogDrawer/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SettingsDialog: typeof import('./src/components/SettingsDialog/index.vue')['default']

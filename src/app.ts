@@ -17,7 +17,9 @@ import userFilesRouter from './routes/userFiles';
 import mcpSkillsRouter from './routes/mcpSkills';
 import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import mcpUserDocumentRouter from './routes/mcpUserDocument';
+import requestLogsRouter from './routes/requestLogs';
 import { errorBroadcaster } from './utils/errorBroadcaster';
+import { requestTracker } from './utils/requestTracker';
 import { formatDate, formatTimestamp } from './utils/timezone';
 import { getBase64FileDir } from './utils/base64-file';
 import os from 'os';
@@ -155,6 +157,7 @@ app.use('/api/llm-models', llmModelsRouter);
 app.use('/api/mcp-records', mcpRecordsRouter);
 app.use('/api/agent-memory', agentMemoryRouter);
 app.use('/api/user-files', userFilesRouter);
+app.use('/api/request-logs', requestLogsRouter);
 
 // 服务端配置（供前端读取）
 app.get('/api/config', (req: Request, res: Response) => {
@@ -245,7 +248,11 @@ const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
   errorBroadcaster.subscribe(ws);
-  ws.on('close', () => errorBroadcaster.unsubscribe(ws));
+  requestTracker.subscribe(ws);
+  ws.on('close', () => {
+    errorBroadcaster.unsubscribe(ws);
+    requestTracker.unsubscribe(ws);
+  });
 });
 
 // 启动服务器

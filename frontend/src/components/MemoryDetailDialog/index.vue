@@ -10,7 +10,21 @@
       <!-- 查看模式：标题直接显示在对话框标题栏 -->
       <!-- 编辑模式：可编辑标题 -->
       <div v-if="isEditing" class="edit-title-row">
-        <el-input v-model="editDescription" placeholder="输入标题" maxlength="500" />
+        <el-select
+          v-if="memoryType === 'user'"
+          v-model="editDescription"
+          filterable
+          allow-create
+          default-first-option
+          placeholder="请选择或输入记忆类别"
+          style="width: 100%;">
+          <el-option
+            v-for="cat in userCategoryOptions"
+            :key="cat.value"
+            :label="cat.label"
+            :value="cat.value" />
+        </el-select>
+        <el-input v-else v-model="editDescription" placeholder="输入标题" maxlength="500" />
       </div>
 
       <!-- 查看模式：内容区域填满 -->
@@ -73,6 +87,17 @@ const saving = ref(false);
 const editDescription = ref('');
 const editContent = ref('');
 const originalItem = ref<AgentMemoryItem | null>(null);
+
+const userCategoryOptions = [
+  { label: '用户系统设置（项目/服务器/部署目录/Docker容器）', value: '用户系统设置' },
+  { label: '用户称呼', value: '用户称呼' },
+  { label: '用户操作习惯', value: '用户操作习惯' },
+  { label: '用户编码习惯', value: '用户编码习惯' },
+  { label: '用户个人偏好', value: '用户个人偏好' },
+  { label: 'AI人格设定', value: 'AI人格设定' },
+  { label: 'AI长期计划', value: 'AI长期计划' },
+  { label: 'AI其他记忆', value: 'AI其他记忆' },
+];
 
 const renderedContent = computed(() => {
   const content = item.value?.content;

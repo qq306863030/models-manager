@@ -58,7 +58,8 @@ import { pickProxy, createSSECallbacks, executeProxy, type InputFormat, type Pro
 import ChatPassthroughProxy from '../utils/service-convert/Proxy/ChatPassthroughProxy';
 import { writeDebugLog, writeSSEDebugLog } from '../utils/debug-logger';
 import { extractConversationSeed } from '../utils/opencode-adapter';
-import { injectMemoryAndTools } from '../utils/prompt-injector';
+import { injectMemoryAndTools, extractSystemPrompt, extractToolNames } from '../utils/prompt-injector';
+import { requestTracker } from '../utils/requestTracker';
 
 const router = Router();
 
@@ -358,6 +359,26 @@ async function handleChatCompletions(req: Request, res: Response, userId?: numbe
 
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
+
+  const reqEntry = requestTracker.recordStart({
+    endpoint: req.originalUrl || req.url || '/v1/chat/completions',
+    method: req.method,
+    model: requestModelName,
+    stream: isStream,
+    systemPrompt: extractSystemPrompt(body),
+    toolNames: extractToolNames(body),
+    tools: (body.tools as any[]) || [],
+    messages: (body.messages as any[]) || [],
+    username,
+    clientIp: req.ip,
+  });
+
+  res.on('finish', () => {
+    requestTracker.recordEnd(reqEntry.id, {
+      statusCode: res.statusCode,
+    });
+  });
+
   // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
   (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 
@@ -680,6 +701,26 @@ async function handleResponses(req: Request, res: Response, userId?: number): Pr
 
   const requestModelName = (body.model as string) || '';
   const isStream = body.stream !== false;
+
+  const reqEntry = requestTracker.recordStart({
+    endpoint: req.originalUrl || req.url || '/v1/responses',
+    method: req.method,
+    model: requestModelName,
+    stream: isStream,
+    systemPrompt: extractSystemPrompt(body),
+    toolNames: extractToolNames(body),
+    tools: (body.tools as any[]) || [],
+    messages: (body.input as any[]) || (body.messages as any[]) || [],
+    username,
+    clientIp: req.ip,
+  });
+
+  res.on('finish', () => {
+    requestTracker.recordEnd(reqEntry.id, {
+      statusCode: res.statusCode,
+    });
+  });
+
   // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
   (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 
@@ -832,6 +873,26 @@ async function handleAnthropicMessages(req: Request, res: Response, userId?: num
 
   // 判断是否为流式请求（默认开启流式）
   const isStream = body.stream !== false;
+
+  const reqEntry = requestTracker.recordStart({
+    endpoint: req.originalUrl || req.url || '/v1/messages',
+    method: req.method,
+    model: requestModelName,
+    stream: isStream,
+    systemPrompt: extractSystemPrompt(body),
+    toolNames: extractToolNames(body),
+    tools: (body.tools as any[]) || [],
+    messages: (body.messages as any[]) || [],
+    username,
+    clientIp: req.ip,
+  });
+
+  res.on('finish', () => {
+    requestTracker.recordEnd(reqEntry.id, {
+      statusCode: res.statusCode,
+    });
+  });
+
   // 提取 opencode 会话种子（若上游命中 opencode.ai 会用于稳定会话 ID）
   (req as any).opencodeSessionSeed = extractConversationSeed(req.headers as unknown as Record<string, unknown>);
 

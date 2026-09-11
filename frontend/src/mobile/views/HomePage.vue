@@ -174,20 +174,15 @@ const proxyEndpoints = [
   { method: 'POST', path: '/memory/mcp',         desc: 'MCP User Memory 服务（用户/AI 记忆管理）' },
 ];
 
+import { copyToClipboard } from '../../utils/clipboard';
+
 // 剪贴板复制
 const copyText = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
+  const success = await copyToClipboard(text);
+  if (success) {
     showToast('已复制');
-  } catch {
-    // 兼容旧浏览器
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast('已复制');
+  } else {
+    showToast('复制失败');
   }
 };
 

@@ -107,6 +107,10 @@
                 <el-icon><Setting /></el-icon>
                 设置
               </el-button>
+              <el-button size="small" class="header-btn" @click="requestLogVisible = true">
+                <el-icon><List /></el-icon>
+                请求
+              </el-button>
               <el-button size="small" class="header-btn" @click="errorLogVisible = true">
                 <el-icon><Notebook /></el-icon>
                 错误日志
@@ -268,6 +272,9 @@
       ref="importConflictRef"
       @resolve="handleImportConflictResolve" />
 
+    <!-- ========== 请求日志抽屉 ========== -->
+    <RequestLogDrawer v-model:visible="requestLogVisible" />
+
     <!-- ========== 错误日志抽屉 ========== -->
     <ErrorLogDrawer v-model:visible="errorLogVisible" />
 
@@ -280,7 +287,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document, Reading, FolderOpened } from '@element-plus/icons-vue'
+import { DocumentChecked, Plus, Setting, Delete, Lock, SwitchButton, User, CopyDocument, Notebook, Download, Upload, Memo, Management, Tools, Document, Reading, FolderOpened, List } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 
 // 组件
@@ -290,9 +297,11 @@ import SettingsDialog from '@/components/SettingsDialog/index.vue'
 import AddModelDialog from '@/components/AddModelDialog/index.vue'
 import EditModelDialog from '@/components/EditModelDialog/index.vue'
 import ErrorLogDrawer from '@/components/ErrorLogDrawer/index.vue'
+import RequestLogDrawer from '@/components/RequestLogDrawer/index.vue'
 import ImportConflictDialog from '@/components/ImportConflictDialog/index.vue'
 import McpRecordDialog from '@/components/McpRecordDialog/index.vue'
 import { useErrorLog } from '@/composables/useErrorLog'
+import { useRequestLog } from '@/composables/useRequestLog'
 import { createModel, updateModel, type Model, type ModelForm } from '@/api/modelService'
 
 // 逻辑
@@ -350,13 +359,15 @@ const openEditDialog = (model: any) => {
   editDialogRef.value?.openDialog(model)
 }
 
-// 错误日志
+// 错误日志与请求日志
 const errorLogVisible = ref(false)
+const requestLogVisible = ref(false)
 
 // MCP记录弹窗 ref
 const mcpRecordDialogRef = ref<InstanceType<typeof McpRecordDialog>>()
 
 const { connect: connectErrorLog, disconnect: disconnectErrorLog } = useErrorLog()
+const { connect: connectRequestLog, disconnect: disconnectRequestLog } = useRequestLog()
 
 const isIndeterminate = computed(() => {
   const len = checkedModelIds.value.length
@@ -624,8 +635,9 @@ onMounted(() => {
     loadStats()
     checkAndRefreshLockStatus()
   }, 20000)
-  // 连接错误日志 WebSocket
+  // 连接日志 WebSocket
   connectErrorLog()
+  connectRequestLog()
 })
 onUnmounted(() => {
   if (statsRefreshTimer !== null) {
@@ -633,6 +645,7 @@ onUnmounted(() => {
     statsRefreshTimer = null
   }
   disconnectErrorLog()
+  disconnectRequestLog()
 })
 </script>
 
