@@ -102,14 +102,16 @@ export const API_FORMAT = {
   OPENAI_RESPONSES: 3,
 } as const;
 
-export const LOCK_DURATION_MS = (() => {
+export function getLockDurationMs(): number {
   try {
     const settings = getDbUserSettings() as UserSettings | undefined;
-    return ((settings as any)?.lock_duration || 600) * 1000;
+    return ((settings as any)?.lock_duration || 30) * 1000;
   } catch {
-    return 600 * 1000;
+    return 30 * 1000;
   }
-})();
+}
+
+export const LOCK_DURATION_MS = 30 * 1000;
 
 /** 上游代理 URL，从数据库读取，空则不使用代理，重启后生效 */
 export const PROXY_URL: string = (() => {
@@ -220,7 +222,7 @@ export function createModelProvider(model: ModelRow): AIProvider {
 export function isModelLocked(isLock: number): { locked: boolean; expired: boolean } {
   if (!isLock || isLock <= 0) return { locked: false, expired: false };
   const elapsed = Date.now() - isLock;
-  if (elapsed > LOCK_DURATION_MS) return { locked: false, expired: true };
+  if (elapsed > getLockDurationMs()) return { locked: false, expired: true };
   return { locked: true, expired: false };
 }
 
@@ -244,8 +246,9 @@ export function getAllModels(userId?: number): ModelRow[] {
 
 export function unlockExpiredModels(userId?: number): void {
   const now = Date.now();
+  const lockDuration = getLockDurationMs();
   const expiredIds = getAllModels(userId)
-    .filter((m) => m.isLock > 0 && now - m.isLock > LOCK_DURATION_MS)
+    .filter((m) => m.isLock > 0 && now - m.isLock > lockDuration)
     .map((m) => m.id);
 
   if (expiredIds.length > 0) {

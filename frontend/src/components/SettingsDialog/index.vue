@@ -74,7 +74,7 @@ const formRef = ref<FormInstance>()
 const formData = reactive<UserSettings>({
   max_content_length: 0,
   max_token: 0,
-  lock_duration: 600,
+  lock_duration: 30,
   proxy_url: '',
 })
 
@@ -85,7 +85,7 @@ const loadSettings = async () => {
     if (res.success && res.data) {
       formData.max_content_length = res.data.max_content_length
       formData.max_token = res.data.max_token
-      formData.lock_duration = res.data.lock_duration || 600
+      formData.lock_duration = res.data.lock_duration || 30
       formData.proxy_url = res.data.proxy_url || ''
     }
   } catch (e) {

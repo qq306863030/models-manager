@@ -27,6 +27,7 @@ import {
   getEffectiveContentLength,
   MAX_RESPONSE_TOKENS,
   LOCK_DURATION_MS,
+  getLockDurationMs,
   isModelLocked,
   isUpstreamGatewayError,
   callOpenAIChat,
@@ -103,8 +104,9 @@ function getAllModels(userId?: number): ModelRow[] {
 
 function unlockExpiredModels(userId?: number): void {
   const now = Date.now();
+  const lockDuration = getLockDurationMs();
   const expired = getAllModels(userId)
-    .filter((m) => m.isLock > 0 && now - m.isLock > LOCK_DURATION_MS);
+    .filter((m) => m.isLock > 0 && now - m.isLock > lockDuration);
 
   if (expired.length > 0) {
     const expiredIds = expired.map((m) => m.id);

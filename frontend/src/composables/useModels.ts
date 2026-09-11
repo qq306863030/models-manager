@@ -70,7 +70,7 @@ async function getLockDurationMs(): Promise<number> {
       return res.data.lock_duration * 1000;
     }
   } catch { /* ignore */ }
-  return 600 * 1000; // 默认 600 秒
+  return 30 * 1000; // 默认 30 秒
 }
 
 // 初始化回调

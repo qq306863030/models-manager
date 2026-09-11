@@ -204,14 +204,14 @@ export const fetchStats = async () => {
 export const loadStats = fetchStats
 
 // ========== 锁定状态检查和自动解锁 ==========
-export const lockDurationMs = ref(600 * 1000) // 默认 600 秒
+export const lockDurationMs = ref(30 * 1000) // 默认 30 秒
 
 // 加载锁定时间设置
 export const loadLockDuration = async () => {
   try {
     const res = await getUserSettings()
     if (res.success && res.data) {
-      lockDurationMs.value = (res.data.lock_duration || 600) * 1000
+      lockDurationMs.value = (res.data.lock_duration || 30) * 1000
     }
   } catch {
     // ignore
