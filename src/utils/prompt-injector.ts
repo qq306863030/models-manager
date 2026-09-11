@@ -111,7 +111,7 @@ export function buildToolInstructionPrompt(hasMemoryTools: boolean, hasSkillTool
   if (hasSkillTools) {
     sections.push(`## 2. 处置方案 (Skills) 工具规范（已检测到可用工具）
 你拥有查询和沉淀标准化处置方案/排障指南的能力（相关工具：ai_mm_search_skills、ai_mm_get_skill_detail、ai_mm_create_skill 等）。
-- **主动检索**：当用户遇到故障排查、疑难报错、部署运维或明确询问标准处理方案时，优先调用 \`ai_mm_search_skills\` 检索是否存在已沉淀的最佳实践；
+- **主动检索**：当用户遇到故障排查、疑难报错、部署运维或明确询问标准处理方案时，优先调用 \`ai_mm_search_skills\` 检索是否存在已沉淀的最佳实践（\`keyword\` 参数支持传入单个字符串或字符串数组如 \`['cesium', 'mapbox']\`，多个关键字结果自动取并集）；
 - **获取详情**：检索到匹配条目后，先调用 \`ai_mm_get_skill_detail\` 获取完整的执行步骤与命令，严格按照标准指南指导用户操作；
 - **经验沉淀**：当与用户共同解决了具备通用参考价值的技术难点或制定了新规范后，可主动提议或调用 \`ai_mm_create_skill\` 将其沉淀为新的处置方案。`);
   }

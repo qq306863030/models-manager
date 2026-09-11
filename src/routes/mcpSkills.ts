@@ -84,25 +84,39 @@ function buildSkillsServer(userId: number): McpServer {
         '返回匹配记录的 id 和标题(description)列表，不包含完整内容。' +
         '使用方法：模型应先调用此工具，根据用户问题在标题和内容中查找最相关的记录，' +
         '获取目标记录的 id 后，再调用 get_skill_detail 查看完整详情。' +
-        '如果关键词为空，则返回所有记录。',
+        '支持传入单个字符串或字符串数组（如 ["cesium", "mapbox"]），多个关键字结果取并集。如果关键词为空，则返回所有记录。',
       inputSchema: z.object({
         keyword: z
-          .string()
+          .union([z.string(), z.array(z.string())])
           .optional()
           .default('')
-          .describe('搜索关键词，在标题和内容中模糊匹配。留空返回全部记录。'),
+          .describe('搜索关键词，支持传入单个字符串或字符串数组（如 ["cesium", "mapbox"]），多个关键字结果取并集，在标题和内容中模糊匹配。留空返回全部记录。'),
       }),
     },
     async ({ keyword }) => {
       try {
+        const keywords: string[] = [];
+        if (typeof keyword === 'string') {
+          const trimmed = keyword.trim();
+          if (trimmed) keywords.push(trimmed);
+        } else if (Array.isArray(keyword)) {
+          for (const k of keyword) {
+            if (typeof k === 'string' && k.trim()) {
+              keywords.push(k.trim());
+            }
+          }
+        }
+
         let rows: { id: number; description: string | null }[];
-        if (keyword) {
-          const like = `%${keyword}%`;
-          rows = db
-            .prepare(
-              'SELECT id, description FROM agent_memory_skills WHERE user_id = ? AND (description LIKE ? OR content LIKE ?) ORDER BY id'
-            )
-            .all(userId, like, like) as any[];
+        if (keywords.length > 0) {
+          const conditions = keywords.map(() => '(description LIKE ? OR content LIKE ?)').join(' OR ');
+          const sql = `SELECT id, description FROM agent_memory_skills WHERE user_id = ? AND (${conditions}) ORDER BY id`;
+          const params: any[] = [userId];
+          for (const k of keywords) {
+            const like = `%${k}%`;
+            params.push(like, like);
+          }
+          rows = db.prepare(sql).all(...params) as any[];
         } else {
           rows = db
             .prepare('SELECT id, description FROM agent_memory_skills WHERE user_id = ? ORDER BY id')
