@@ -111,18 +111,22 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
       writeChunk({ reasoning_content: delta });
     },
     onToolDelta: (delta: string, info) => {
+      hasEmittedToolCall = true;
       let pending = pendingTools.get(info.index);
       if (!pending) {
-        pending = { id: info.id, index: info.index, name: info.name, arguments: '' };
+        const toolId = info.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        pending = { id: toolId, index: info.index, name: info.name, arguments: '' };
         pendingTools.set(info.index, pending);
         writeChunk({
           tool_calls: [{
             index: info.index,
-            id: info.id,
+            id: toolId,
             type: 'function',
             function: { name: info.name, arguments: '' },
           }],
         });
+      } else if (!pending.id && info.id) {
+        pending.id = info.id;
       }
       if (info.field === 'name' && info.name && info.name !== pending.name) {
         pending.name = info.name;
@@ -143,7 +147,8 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
       trackUsage(usage);
 
       // 1. 先发 finish_reason chunk（空 delta + 正确的原因）
-      sendFinish(hasEmittedToolCall ? 'tool_calls' : 'stop');
+      const finalFinishReason = (hasEmittedToolCall || pendingTools.size > 0) ? 'tool_calls' : 'stop';
+      sendFinish(finalFinishReason);
       // 2. 再发 usage chunk（标准 OpenAI 格式：choices 为空数组）
       writeSSE(res, {
         id: responseId,
@@ -160,7 +165,8 @@ export function createChatSSECallbacks(res: Response, options?: { modelId?: numb
     },
     onDone: () => {
       if (!hasSentFinish) {
-        sendFinish(hasEmittedToolCall ? 'tool_calls' : 'stop');
+        const finalFinishReason = (hasEmittedToolCall || pendingTools.size > 0) ? 'tool_calls' : 'stop';
+        sendFinish(finalFinishReason);
       }
       res.write('data: [DONE]\n\n');
       res.end();

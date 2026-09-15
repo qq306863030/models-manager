@@ -384,7 +384,6 @@ onMounted(() => {
       color: #646566;
       line-height: 1.5;
       word-break: break-all;
-      white-space: pre-wrap;
       width: 100%;
     }
   }

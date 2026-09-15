@@ -60,6 +60,7 @@ export class AnthropicStreamConverter {
 
   /** 文本内容收集（用于估算 token） */
   public textContent: string = '';
+  public hasToolCalls: boolean = false;
   public usage: { input_tokens?: number; output_tokens?: number } | null = null;
 
   constructor(modelName?: string) {
@@ -108,6 +109,8 @@ export class AnthropicStreamConverter {
         if (block.type === 'tool_use') {
           // tool_use 块开始 → 转换成 OpenAI tool_calls delta
           this.toolCallIndex++;
+          this.hasToolCalls = true;
+          const toolId = block.id || `call_${generateRandomString(24)}`;
           return {
             id: this.completionId,
             object: 'chat.completion.chunk',
@@ -118,7 +121,7 @@ export class AnthropicStreamConverter {
               delta: {
                 tool_calls: [{
                   index: this.toolCallIndex - 1,
-                  id: block.id || '',
+                  id: toolId,
                   type: 'function',
                   function: {
                     name: block.name || '',
@@ -333,6 +336,7 @@ export async function processChatStream(
 
   let usage: OpenAI.CompletionUsage | null = null;
   let textContent = '';
+  let hasToolCalls = false;
 
   try {
     for await (const chunk of stream) {
@@ -342,6 +346,9 @@ export async function processChatStream(
 
       if (chunk.choices && chunk.choices[0]) {
         textContent += chunk.choices[0].delta?.content || '';
+        if (chunk.choices[0].delta?.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
+          hasToolCalls = true;
+        }
 
         writeSSE(res, {
           id: completionId,
@@ -353,8 +360,9 @@ export async function processChatStream(
       }
     }
 
-    // 无可见输出时注入零宽字符，防止 Copilot 报 "no choices"
-    if (!textContent) {
+    // 无可见输出且无工具调用时注入零宽字符，防止 Copilot 报 "no choices"
+    // 绝不能对工具调用响应注入 content，否则会破坏 finish_reason 并覆盖 AIMessage 状态
+    if (!textContent && !hasToolCalls) {
       writeSSE(res, {
         id: completionId,
         object: 'chat.completion.chunk',
@@ -451,8 +459,9 @@ export async function processAnthropicStream(
       }
     }
 
-    // 无可见输出时注入零宽字符，防止 Copilot 报 "no choices"
-    if (!converter.textContent) {
+    // 无可见输出且无工具调用时注入零宽字符，防止 Copilot 报 "no choices"
+    // 绝不能对工具调用响应注入 content，否则会覆盖 finish_reason: "tool_calls" 导致客户端崩溃
+    if (!converter.textContent && !converter.hasToolCalls) {
       writeSSE(res, {
         id: converter.getCompletionId(),
         object: 'chat.completion.chunk',
@@ -1116,8 +1125,8 @@ export async function streamChatAsAnthropicSSE(
 
       // finish_reason → message_delta + content_block_stop + message_stop
       if (finishReason) {
-        // 无可见输出时注入零宽字符作为文本块
-        if (!textContent && textBlockIndex < 0) {
+        // 无可见输出且无工具调用时注入零宽字符作为文本块
+        if (!textContent && textBlockIndex < 0 && !toolCallStreamStarted) {
           emitTextBlockDelta(INVISIBLE_SENTINEL);
           textContent = INVISIBLE_SENTINEL;
         }
@@ -1162,8 +1171,8 @@ export async function streamChatAsAnthropicSSE(
 
     // 流结束但未收到 finish_reason
     if (!completed) {
-      // 无可见输出时注入零宽字符
-      if (!textContent && textBlockIndex < 0) {
+      // 无可见输出且无工具调用时注入零宽字符
+      if (!textContent && textBlockIndex < 0 && !toolCallStreamStarted) {
         emitTextBlockDelta(INVISIBLE_SENTINEL);
         textContent = INVISIBLE_SENTINEL;
       }

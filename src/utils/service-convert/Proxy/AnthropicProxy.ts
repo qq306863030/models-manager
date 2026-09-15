@@ -99,6 +99,7 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
   ): Promise<void> {
     const decoder = new TextDecoder();
     let buffer = '';
+    const toolBlocks = new Map<number, { id: string; name: string }>();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -118,6 +119,20 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
           const event = JSON.parse(dataStr);
 
           switch (event.type) {
+            case 'content_block_start': {
+              if (event.content_block?.type === 'tool_use') {
+                const toolId = event.content_block.id || `call_${Date.now()}_${event.index || 0}`;
+                const toolName = event.content_block.name || '';
+                toolBlocks.set(event.index || 0, { id: toolId, name: toolName });
+                callbacks.onToolDelta?.(toolName, {
+                  id: toolId,
+                  index: event.index || 0,
+                  name: toolName,
+                  field: 'name',
+                });
+              }
+              break;
+            }
             case 'content_block_delta': {
               const delta = event.delta;
               if (delta?.type === 'text_delta' && delta.text) {
@@ -127,27 +142,26 @@ export default class AnthropicProxy extends BaseProxy<AnthropicProxyInput, void,
                 callbacks.onThinking?.(delta.thinking);
               }
               if (delta?.type === 'input_json_delta' && delta.partial_json) {
+                const block = toolBlocks.get(event.index || 0);
                 callbacks.onToolDelta?.(delta.partial_json, {
-                  id: event.content_block?.id || '',
+                  id: block?.id || '',
                   index: event.index || 0,
-                  name: event.content_block?.name || '',
+                  name: block?.name || '',
                   field: 'arguments',
                 });
               }
               break;
             }
-            case 'content_block_start': {
-              if (event.content_block?.type === 'tool_use') {
-                callbacks.onToolDelta?.(event.content_block.name || '', {
-                  id: event.content_block.id || '',
-                  index: event.index || 0,
-                  name: event.content_block.name || '',
-                  field: 'name',
-                });
-              }
-              break;
-            }
             case 'message_delta': {
+              if (event.delta?.stop_reason === 'tool_use') {
+                for (const block of toolBlocks.values()) {
+                  callbacks.onToolCall?.({
+                    id: block.id,
+                    type: 'function',
+                    function: { name: block.name, arguments: '' },
+                  });
+                }
+              }
               if (event.usage) {
                 callbacks.onUsage?.({ prompt_tokens: 0, completion_tokens: event.usage.output_tokens || 0, total_tokens: event.usage.output_tokens || 0 });
               }
