@@ -1,14 +1,19 @@
 <template>
   <div class="home-page">
     <div class="custom-navbar">
-      <div class="navbar-title">AI模型管理</div>
+      <div class="navbar-brand">
+        <div class="navbar-title">AI模型管理</div>
+      </div>
       <div class="navbar-actions">
-        <van-button size="small" @click="router.push('/m/memory/user')">记忆</van-button>
-        <van-button size="small" @click="router.push('/m/files')">文件</van-button>
-        <van-button type="primary" size="small" @click="openAddDialog">添加</van-button>
-        <van-button size="small" @click="openApiDialog">接口</van-button>
-        <van-button size="small" @click="settingsDialogVisible = true">设置</van-button>
-        <van-button size="small" type="danger" @click="handleLogout">注销</van-button>
+        <van-button type="primary" size="small" icon="plus" class="add-model-btn" @click="openAddDialog">
+          添加
+        </van-button>
+        <MobileNavDropdown
+          show-add-action
+          @open-api="openApiDialog"
+          @open-settings="settingsDialogVisible = true"
+          @open-add="openAddDialog"
+        />
       </div>
     </div>
 
@@ -135,10 +140,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { showToast } from 'vant';
 import MobileModelCard from '@/mobile/components/MobileModelCard.vue';
 import MobileTokenChart from '@/mobile/components/MobileTokenChart.vue';
+import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
 import {
   modelList, selectedModelId, statsLoading, allStats, modelStatMap,
   selectModel, handleCopy, handleDelete as doDelete, handleToggleLock,
@@ -149,6 +155,7 @@ import {
 import type { Model } from '@/api/modelService';
 
 const router = useRouter();
+const route = useRoute();
 const username = localStorage.getItem('auth_username') || '';
 const isAdmin = computed(() => localStorage.getItem('auth_is_admin') === '1');
 
@@ -318,6 +325,17 @@ onMounted(() => {
     loadStats();
     checkAndRefreshLockStatus();
   }, 20000);
+
+  if (route.query.open === 'api') {
+    openApiDialog();
+    router.replace({ path: '/m/', query: {} });
+  } else if (route.query.open === 'settings') {
+    settingsDialogVisible.value = true;
+    router.replace({ path: '/m/', query: {} });
+  } else if (route.query.open === 'add') {
+    openAddDialog();
+    router.replace({ path: '/m/', query: {} });
+  }
 });
 
 onUnmounted(() => {
@@ -345,6 +363,14 @@ onUnmounted(() => {
   padding: 0 12px;
   border-bottom: 1px solid #ebedf0;
   z-index: 100;
+  box-sizing: border-box;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
 }
 
 .navbar-title {
@@ -352,22 +378,21 @@ onUnmounted(() => {
   font-weight: 600;
   color: #323233;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navbar-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-shrink: 0;
 
-  .van-button {
+  .add-model-btn {
     padding: 0 10px;
-    height: 28px;
+    height: 30px;
     font-size: 12px;
-
-    &::after {
-      border-radius: 4px;
-    }
+    border-radius: 6px;
   }
 }
 

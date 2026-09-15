@@ -7,8 +7,9 @@
       left-arrow
       @click-left="goHome">
       <template #right>
-        <van-icon name="info-o" size="18" style="margin-right: 12px;" @click="showMcpConfig = true" />
-        <van-icon name="plus" size="20" @click="openAddDialog" />
+        <van-icon name="info-o" size="18" style="margin-right: 10px;" @click="showMcpConfig = true" />
+        <van-icon name="plus" size="20" style="margin-right: 8px;" @click="openAddDialog" />
+        <MobileNavDropdown :show-add-action="false" compact />
       </template>
     </van-nav-bar>
 
@@ -127,14 +128,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { showToast, showConfirmDialog, showLoadingToast, closeToast } from 'vant';
 import MarkdownIt from 'markdown-it';
+import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
 
 const md = new MarkdownIt({
   html: false,
   linkify: true,
   typographer: true,
+  breaks: true,
 });
 import {
   getMemoryList,
@@ -145,6 +148,7 @@ import {
 } from '@/api/agentMemoryService';
 
 const router = useRouter();
+const route = useRoute();
 const list = ref<AgentMemoryItem[]>([]);
 const refreshing = ref(false);
 const activeTab = ref<'user' | 'skills' | 'docs'>('user');
@@ -221,7 +225,8 @@ const onRefresh = async () => {
   refreshing.value = false;
 };
 
-const onTabChange = () => {
+const onTabChange = (name: any) => {
+  router.replace(`/m/memory/${name}`);
   fetchList();
 };
 
@@ -325,6 +330,9 @@ const handleDelete = async (item: AgentMemoryItem) => {
 };
 
 onMounted(() => {
+  if (route.params.type && ['user', 'skills', 'docs'].includes(route.params.type as string)) {
+    activeTab.value = route.params.type as 'user' | 'skills' | 'docs';
+  }
   fetchList();
 });
 </script>
@@ -376,6 +384,7 @@ onMounted(() => {
       color: #646566;
       line-height: 1.5;
       word-break: break-all;
+      white-space: pre-wrap;
       width: 100%;
     }
   }
@@ -433,6 +442,7 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.7;
   color: #24292e;
+  word-break: break-word;
 
   :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
     margin-top: 1em;

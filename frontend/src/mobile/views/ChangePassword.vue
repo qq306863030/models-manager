@@ -1,6 +1,10 @@
 <template>
   <div class="change-password-page">
-    <van-nav-bar title="修改密码" left-text="返回" left-arrow @click-left="goBack" />
+    <van-nav-bar title="修改密码" left-text="返回" left-arrow @click-left="goBack">
+      <template #right>
+        <MobileNavDropdown :show-add-action="false" />
+      </template>
+    </van-nav-bar>
     <div class="form-container">
       <van-cell-group inset>
         <van-field v-model="formData.oldPassword" type="password" label="当前密码" placeholder="请输入当前密码" />
@@ -15,6 +19,7 @@
 import { ref, reactive, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast, showFailToast } from 'vant';
+import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
 import { changePassword } from '@/api/authService';
 const router = useRouter();
 const loading = ref(false);

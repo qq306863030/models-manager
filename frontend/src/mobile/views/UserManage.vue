@@ -1,6 +1,10 @@
 <template>
   <div class="user-manage-page">
-    <van-nav-bar title="用户管理" left-text="返回" left-arrow @click-left="goBack" />
+    <van-nav-bar title="用户管理" left-text="返回" left-arrow @click-left="goBack">
+      <template #right>
+        <MobileNavDropdown :show-add-action="false" />
+      </template>
+    </van-nav-bar>
     <div class="content">
       <div class="action-bar">
         <van-button type="primary" size="small" @click="openAddDialog">添加用户</van-button>
@@ -95,6 +99,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast, showFailToast, showConfirmDialog } from 'vant';
+import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
 import { getUserList, deleteUser, createUser, updateUser } from '@/api/authService';
 import type { UserItem } from '@/api/authService';
 
@@ -290,7 +295,6 @@ onMounted(() => {
 .user-manage-page {
   min-height: 100vh;
   background: #f7f8fa;
-  padding-top: 46px;
 }
 
 .content {

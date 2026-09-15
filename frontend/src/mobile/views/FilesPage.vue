@@ -1,6 +1,10 @@
 <template>
   <div class="files-page">
-    <van-nav-bar title="我的文件" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="我的文件" left-arrow @click-left="router.back()">
+      <template #right>
+        <MobileNavDropdown :show-add-action="false" />
+      </template>
+    </van-nav-bar>
 
     <div class="content">
       <!-- 上传按钮 -->
@@ -51,6 +55,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast, showConfirmDialog } from 'vant';
+import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
 import { getUserFiles, uploadFile, downloadFile, deleteFile, type UserFileItem } from '@/api/userFilesService';
 
 const router = useRouter();

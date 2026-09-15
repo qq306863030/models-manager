@@ -84,6 +84,7 @@ const content = props.item.content;
   color: #606266;
   line-height: 1.6;
   word-break: break-all;
+  white-space: pre-wrap;
   width: 100%;
   flex: 1;
   overflow-y: auto;

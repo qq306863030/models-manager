@@ -68,6 +68,7 @@ const md = new MarkdownIt({
   html: false,
   linkify: true,
   typographer: true,
+  breaks: true,
 });
 
 defineOptions({ name: 'MemoryDetailDialog' });
@@ -206,6 +207,7 @@ defineExpose({ openDialog });
   font-size: 14px;
   line-height: 1.7;
   color: #24292e;
+  word-break: break-word;
 
   :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
     margin-top: 1em;
