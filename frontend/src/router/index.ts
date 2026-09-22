@@ -26,7 +26,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/memory/:type',
+    path: '/memory/:type?',
     name: 'Memory',
     component: () => import('@/views/MemoryPage.vue'),
     meta: { requiresAuth: true }
@@ -35,6 +35,12 @@ const routes: RouteRecordRaw[] = [
     path: '/files',
     name: 'Files',
     component: () => import('@/views/FilesPage.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/chat',
+    name: 'Chat',
+    component: () => import('@/views/chat/ChatPage.vue'),
     meta: { requiresAuth: true }
   },
   {

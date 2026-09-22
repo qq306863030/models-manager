@@ -11,6 +11,8 @@ A lightweight LLM management tool providing unified proxy interfaces with automa
 - 🎨 Multiple API format support with custom model parameters
 - 🖱️ Drag-and-drop model priority sorting
 - 🖼️ Added image conversion support: when a model does not have image recognition capability (i.e. its modality capability does not include Vision), base64 images carried in requests can be converted into URLs and used with [deepseek-vision-mcp](https://www.npmjs.com/package/deepseek-vision-mcp) to enable image recognition for the model
+- 📁 **File Management Center**: Personal file repository with multi-format upload, search, authorized direct download links, and archive management
+- 💬 **Smart AI Chat & Agent**: Built-in full Agent loop featuring real-time reasoning stream (thinking process), instant document pre-parsing (PDF/Word/Excel/PPT, etc.), multi-turn attachment memory, and seamless MCP tool executions (including format conversion and one-click Markdown file generation & download)
 - 🤝 **Integrates with various Agent tools**, replaces `deepseek-copilot-bridge`, can be directly used in **VSCode Copilot**
 
 ### 📌 Model Calling Strategy
@@ -89,6 +91,21 @@ ai-server clear     # Stop and remove the server from pm2
 - **Lock Button** (🔒): Manually lock a model. Locked models will not be called. Click again to unlock
 - **Disable Button** (⛔): Disable a model. Disabled models will not participate in any calls and will not appear in the model list
 - **Drag-and-Drop Sorting**: Drag cards in the model list to adjust call order, models higher up have higher priority
+
+### 📁 File Management (My Files)
+
+A dedicated personal file repository and document center:
+- **User Isolation**: Files are securely isolated and persisted under `~/.models-manager/user-files/`
+- **Multi-Format Support**: Upload, search, manage, and delete office documents, Markdown notes, PDFs, images, and code files
+- **Instant Direct Download**: Secure direct download links with user authorization; automatically archives files generated from AI chat
+
+### 💬 AI Chat (Smart Assistant)
+
+A powerful conversation workbench equipped with a complete Agent loop and toolchain:
+- **Integrated MCP Toolchain**:
+  - Direct access to Model Memory, Skills, and User Documents
+  - Document processor tools (`doc-processor`) for bidirectional conversions (Word, PDF, Excel, Markdown)
+  - One-click file generation via `create_markdown_file`, providing direct download buttons inside chat cards and responses
 
 ### 🐳 Docker Deployment
 

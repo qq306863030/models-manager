@@ -82,20 +82,22 @@
             <div class="detail-title">{{ editForm.description }}</div>
             <div class="markdown-body" v-html="renderedContent"></div>
           </template>
-          <!-- 编辑模式：可编辑表单 -->
-          <van-cell-group inset v-else label-width="4em">
+          <!-- 编辑模式：可编辑表单（无 label，带输入边框） -->
+          <div v-else class="edit-mode-form">
             <van-field
               v-model="editForm.description"
-              label="标题"
+              placeholder="请输入标题"
+              class="edit-bordered-field title-field"
               :border="false" />
             <van-field
               v-model="editForm.content"
               type="textarea"
-              label="内容"
+              placeholder="请输入内容"
               rows="10"
               autosize
+              class="edit-bordered-field content-field"
               :border="false" />
-          </van-cell-group>
+          </div>
         </div>
       </div>
     </van-popup>
@@ -429,6 +431,49 @@ onMounted(() => {
   color: #323233;
   margin-bottom: 12px;
   line-height: 1.4;
+}
+
+/* 编辑模式表单样式（显示输入边框，无label） */
+.edit-mode-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .edit-bordered-field {
+    border: 1px solid #dcdfe6;
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px 12px;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+
+    &::after {
+      display: none !important;
+    }
+
+    &:focus-within {
+      border-color: #1989fa;
+      box-shadow: 0 0 0 1px rgba(25, 137, 250, 0.2);
+    }
+
+    :deep(.van-field__control) {
+      color: #323233;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    &.title-field {
+      :deep(.van-field__control) {
+        font-weight: 500;
+      }
+    }
+
+    &.content-field {
+      :deep(.van-field__control) {
+        min-height: 180px;
+      }
+    }
+  }
 }
 
 /* Markdown 渲染样式 */

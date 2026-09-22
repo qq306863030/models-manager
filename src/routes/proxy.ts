@@ -1205,6 +1205,50 @@ userRouter.get('/v1/test', async (req: Request, res: Response) => {
   }
 });
 
+// ========== 全局兼容代理路由（从请求头 X-Username 识别用户） ==========
+router.get('/v1/models', (req: Request, res: Response) => {
+  const username = (req.headers['x-username'] as string) || (req.query.username as string);
+  const userId = username ? getUserIdByUsername(username) ?? undefined : undefined;
+  res.json({
+    object: 'list',
+    data: getAllModels(userId)
+      .filter((m) => !m.isDisable)
+      .map(buildOpenAIModel),
+  });
+});
+
+router.post('/v1/chat/completions', (req: Request, res: Response) => {
+  const username = (req.headers['x-username'] as string) || (req.query.username as string);
+  const userId = username ? getUserIdByUsername(username) ?? undefined : undefined;
+  (req as RequestWithUser).proxyUsername = username;
+  (req as RequestWithUser).proxyUserId = userId;
+  handleChatCompletions(req, res, userId);
+});
+
+router.post('/v1/responses', (req: Request, res: Response) => {
+  const username = (req.headers['x-username'] as string) || (req.query.username as string);
+  const userId = username ? getUserIdByUsername(username) ?? undefined : undefined;
+  (req as RequestWithUser).proxyUsername = username;
+  (req as RequestWithUser).proxyUserId = userId;
+  handleResponses(req, res, userId);
+});
+
+router.post('/v1/messages', (req: Request, res: Response) => {
+  const username = (req.headers['x-username'] as string) || (req.query.username as string);
+  const userId = username ? getUserIdByUsername(username) ?? undefined : undefined;
+  (req as RequestWithUser).proxyUsername = username;
+  (req as RequestWithUser).proxyUserId = userId;
+  handleAnthropicMessages(req, res, userId);
+});
+
+router.post('/v1/anthropic/messages', (req: Request, res: Response) => {
+  const username = (req.headers['x-username'] as string) || (req.query.username as string);
+  const userId = username ? getUserIdByUsername(username) ?? undefined : undefined;
+  (req as RequestWithUser).proxyUsername = username;
+  (req as RequestWithUser).proxyUserId = userId;
+  handleAnthropicMessages(req, res, userId);
+});
+
 // 用户级模型列表
 userRouter.get('/v1/models', (req: Request, res: Response) => {
   const reqWithUser = req as RequestWithUser;

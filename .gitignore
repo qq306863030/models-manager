@@ -1,6 +1,8 @@
 node_modules/
 dist/
 data/*.db
+data/*.sqlite
+*.sqlite
 *.log
 .env
 .DS_Store

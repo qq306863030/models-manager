@@ -106,64 +106,28 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
         validateResponse: async (fetchResponse: globalThis.Response) => {
           const contentType = (fetchResponse.headers.get('Content-Type') || '').toLowerCase();
 
-          // 非 SSE（JSON 响应）→ clone 后解析 body 检查
-          if (!contentType.includes('text/event-stream')) {
-            const cloned = fetchResponse.clone();
-            const bodyText = await cloned.text();
-            appendToLog(logBuffer, 'upstream', bodyText, 10000);
-            let json: Record<string, unknown>;
-            try {
-              json = JSON.parse(bodyText);
-            } catch {
-              appendToLog(logBuffer, 'error', { error: 'Non-SSE response invalid JSON', body: bodyText.slice(0, 500) });
-              throw new Error(`Response contained no choices (invalid JSON)`);
-            }
-            const choices = json.choices;
-            if (!choices || (Array.isArray(choices) && choices.length === 0)) {
-              appendToLog(logBuffer, 'validate', { status: fetchResponse.status, contentType, body: bodyText.slice(0, 2000) });
-              throw new Error(`Response contained no choices`);
-            }
+          // SSE 响应 → 直接放行，绝不对 SSE 流进行 clone/getReader 偷读，确保完全零缓冲实时透传
+          if (contentType.includes('text/event-stream')) {
             return;
           }
 
-          // SSE 响应 → 只读取前几块确认有 choices 就立即退出，不阻塞流式输出
-          if (!fetchResponse.body) throw new Error('Response contained no choices (no body)');
+          // 非 SSE（JSON 响应）→ clone 后解析 body 检查
           const cloned = fetchResponse.clone();
-          const fullReader = cloned.body!.getReader();
-          const decoder = new TextDecoder();
-          let sseBuf = '';
-          let hasChoices = false;
-          let maxScanChunks = 20; // 最多扫描 20 块，避免无限读取
-          while (maxScanChunks-- > 0) {
-            const { done, value } = await fullReader.read();
-            if (done) break;
-            sseBuf += decoder.decode(value, { stream: true });
-            // 从累积的缓冲区中检查是否有 choices
-            const lines = sseBuf.split('\n');
-            sseBuf = lines.pop() || '';
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('data:') && !trimmed.includes('[DONE]')) {
-                const jsonStr = trimmed.slice(5).trim();
-                if (!jsonStr) continue;
-                try {
-                  const chunk = JSON.parse(jsonStr) as Record<string, unknown>;
-                  const choices = chunk.choices;
-                  if (Array.isArray(choices) && choices.length > 0) {
-                    hasChoices = true;
-                    break;
-                  }
-                } catch { /* 跳过 */ }
-              }
-            }
-            if (hasChoices) break;
+          const bodyText = await cloned.text();
+          appendToLog(logBuffer, 'upstream', bodyText, 10000);
+          let json: Record<string, unknown>;
+          try {
+            json = JSON.parse(bodyText);
+          } catch {
+            appendToLog(logBuffer, 'error', { error: 'Non-SSE response invalid JSON', body: bodyText.slice(0, 500) });
+            throw new Error(`Response contained no choices (invalid JSON)`);
           }
-          // 取消 clone 读取（释放 body，原 response 不受影响）
-          fullReader.cancel().catch(() => {});
-          if (!hasChoices) {
-            appendToLog(logBuffer, 'validate', { status: fetchResponse.status, contentType, result: 'no choices', scannedUpTo: sseBuf.slice(0, 500) });
-            throw new Error('Response contained no choices');
+          const choices = json.choices;
+          if (!choices || (Array.isArray(choices) && choices.length === 0)) {
+            appendToLog(logBuffer, 'validate', { status: fetchResponse.status, contentType, body: bodyText.slice(0, 2000) });
+            throw new Error(`Response contained no choices`);
           }
+          return;
         },
       });
     } catch (err) {
@@ -178,11 +142,15 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
     if (!clientRes) throw new Error('ChatPassthroughProxy: client response not set');
 
     if (!clientRes.headersSent) {
-      clientRes.setHeader('Content-Type', upstreamResponse.headers.get('Content-Type') || 'application/json');
+      const upstreamContentType = upstreamResponse.headers.get('Content-Type') || 'text/event-stream; charset=utf-8';
+      clientRes.setHeader('Content-Type', upstreamContentType);
       const cacheControl = upstreamResponse.headers.get('Cache-Control');
-      if (cacheControl) clientRes.setHeader('Cache-Control', cacheControl);
-      const connection = upstreamResponse.headers.get('Connection');
-      if (connection) clientRes.setHeader('Connection', connection);
+      clientRes.setHeader('Cache-Control', cacheControl || 'no-cache, no-transform');
+      clientRes.setHeader('Connection', 'keep-alive');
+      clientRes.setHeader('X-Accel-Buffering', 'no');
+      if (clientRes.socket) {
+        clientRes.socket.setNoDelay(true);
+      }
       clientRes.flushHeaders();
     }
 
@@ -204,6 +172,9 @@ export default class ChatPassthroughProxy extends BaseProxy<ChatCompletionsProxy
 
           // 直接写入原始字节（透传，不修改）
           clientRes.write(value);
+          if (typeof (clientRes as any).flush === 'function') {
+            (clientRes as any).flush();
+          }
 
           // 异步解析：解码文本并检查 SSE 中的 usage（不影响透传性能）
           sseBuffer += decoder.decode(value, { stream: true });

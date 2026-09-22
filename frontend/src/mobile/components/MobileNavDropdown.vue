@@ -53,6 +53,20 @@
           </van-cell>
 
           <van-cell
+            title="AI 聊天"
+            icon="chat-o"
+            clickable
+            class="nav-cell-item"
+            :class="{ 'nav-cell-active': isCurrentRoute('/m/chat') }"
+            @click="navigate('/m/chat')"
+          >
+            <template #right-icon>
+              <van-tag v-if="isCurrentRoute('/m/chat')" type="primary" size="small">当前</van-tag>
+              <van-icon v-else name="arrow" class="cell-arrow" />
+            </template>
+          </van-cell>
+
+          <van-cell
             v-if="showAddAction"
             title="添加模型"
             icon="plus"

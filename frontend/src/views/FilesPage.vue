@@ -1,58 +1,7 @@
 <template>
   <div class="files-page">
     <!-- ========== 顶部导航栏 ========== -->
-    <el-header class="app-header">
-      <div class="header-left">
-        <h1 class="app-title">AI 模型管理平台</h1>
-        <div class="header-nav-links">
-          <el-button
-            :type="currentNav === 'home' ? 'primary' : 'text'"
-            @click="handleNavSelect('home')">
-            <el-icon><Management /></el-icon>
-            模型管理
-          </el-button>
-          <el-button
-            :type="currentNav === 'memory-user' ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-user')">
-            <el-icon><Document /></el-icon>
-            模型记忆
-          </el-button>
-          <el-button
-            :type="currentNav === 'memory-skills' ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-skills')">
-            <el-icon><Tools /></el-icon>
-            处置方案
-          </el-button>
-          <el-button
-            :type="currentNav === 'memory-docs' ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-docs')">
-            <el-icon><Reading /></el-icon>
-            我的文档
-          </el-button>
-          <el-button
-            :type="currentNav === 'files' ? 'primary' : 'text'"
-            @click="handleNavSelect('files')">
-            <el-icon><FolderOpened /></el-icon>
-            我的文件
-          </el-button>
-        </div>
-      </div>
-      <div class="header-right">
-        <el-button v-if="isAdmin" text @click="$router.push('/user-manage')">
-          <el-icon><User /></el-icon>
-          用户管理
-        </el-button>
-        <el-button text @click="$router.push('/change-password')">
-          <el-icon><Lock /></el-icon>
-          修改密码
-        </el-button>
-        <el-button text type="danger" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
-          注销
-        </el-button>
-        <span class="username">{{ username }}</span>
-      </div>
-    </el-header>
+    <AppHeader current-nav="files" />
 
     <!-- ========== 主内容区 ========== -->
     <el-main class="app-main">
@@ -167,8 +116,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getUserFiles, uploadFile, downloadFile, deleteFile, type UserFileItem } from '@/api/userFilesService';
+import AppHeader from '@/components/AppHeader.vue';
 import {
-  Management, Document, Tools, Reading, FolderOpened,
+  Management, Document, Tools, Reading, FolderOpened, ChatDotRound,
   UploadFilled, Upload, Download, Delete, Lock, SwitchButton, User
 } from '@element-plus/icons-vue';
 
@@ -197,6 +147,7 @@ const handleNavSelect = (index: string) => {
   else if (index === 'memory-skills') router.push('/memory/skills');
   else if (index === 'memory-docs') router.push('/memory/docs');
   else if (index === 'files') router.push('/files');
+  else if (index === 'chat') router.push('/chat');
 };
 
 const handleLogout = () => {
@@ -332,81 +283,7 @@ onMounted(() => {
   background: #f5f7fa;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  height: 60px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.app-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0;
-  white-space: nowrap;
-}
-
-.header-nav-links {
-  display: flex;
-  gap: 4px;
-
-  :deep(.el-button) {
-    height: 60px;
-    border: none;
-    border-radius: 0;
-    font-size: 14px;
-    padding: 0 16px;
-    transition: background 0.2s;
-
-    .el-icon {
-      margin-right: 5px;
-    }
-
-    &.el-button--primary {
-      background: #f0f2f5;
-      color: #303133;
-      font-weight: 500;
-      --el-button-bg-color: #f0f2f5;
-      --el-button-border-color: transparent;
-      --el-button-hover-bg-color: #f0f2f5;
-      --el-button-hover-border-color: transparent;
-      --el-button-active-bg-color: #f0f2f5;
-      --el-button-active-border-color: transparent;
-    }
-
-    &.el-button--text {
-      color: #606266;
-      font-weight: 400;
-      --el-button-text-color: #606266;
-      --el-button-hover-text-color: #303133;
-    }
-  }
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.username {
-  font-size: 14px;
-  color: #606266;
-  margin-left: 8px;
-}
 
 .app-main {
   padding: 24px;

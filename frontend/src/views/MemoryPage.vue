@@ -1,54 +1,7 @@
 <template>
   <div class="memory-page">
     <!-- ========== 顶部导航栏 ========== -->
-    <el-header class="app-header">
-      <div class="header-left">
-        <h1 class="app-title">AI 模型管理平台</h1>
-        <div class="header-nav-links">
-          <el-button
-            :type="'home' === currentNav ? 'primary' : 'text'"
-            @click="handleNavSelect('home')">
-            <el-icon><Management /></el-icon>
-            模型管理
-          </el-button>
-          <el-button
-            :type="'memory-user' === currentNav ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-user')">
-            <el-icon><Document /></el-icon>
-            模型记忆
-          </el-button>
-          <el-button
-            :type="'memory-skills' === currentNav ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-skills')">
-            <el-icon><Tools /></el-icon>
-            处置方案
-          </el-button>
-          <el-button
-            :type="'memory-docs' === currentNav ? 'primary' : 'text'"
-            @click="handleNavSelect('memory-docs')">
-            <el-icon><Reading /></el-icon>
-            我的文档
-          </el-button>
-          <el-button
-            :type="'files' === currentNav ? 'primary' : 'text'"
-            @click="handleNavSelect('files')">
-            <el-icon><FolderOpened /></el-icon>
-            我的文件
-          </el-button>
-        </div>
-      </div>
-      <div class="header-right">
-        <el-button text @click="$router.push('/change-password')">
-          <el-icon><Lock /></el-icon>
-          修改密码
-        </el-button>
-        <el-button text type="danger" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
-          注销
-        </el-button>
-        <span class="username">{{ username }}</span>
-      </div>
-    </el-header>
+    <AppHeader :current-nav="currentNav" />
 
     <!-- ========== 主内容区 ========== -->
     <el-main class="app-main">
@@ -201,13 +154,14 @@ import {
 } from '@/api/agentMemoryService';
 import MemoryCard from '@/components/MemoryCard/index.vue';
 import MemoryDetailDialog from '@/components/MemoryDetailDialog/index.vue';
-import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument, Reading, FolderOpened } from '@element-plus/icons-vue';
+import AppHeader from '@/components/AppHeader.vue';
+import { Management, Tools, Document, ArrowLeft, Plus, Delete, Edit, Check, View, Lock, SwitchButton, User, Loading, Folder, InfoFilled, CopyDocument, Reading, FolderOpened, ChatDotRound } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
 
 const memoryType = computed(() => {
-  const t = route.params.type as string;
+  const t = (route.params.type || route.query.type) as string;
   if (t === 'skills') return 'skills';
   if (t === 'docs') return 'docs';
   return 'user';
@@ -310,6 +264,8 @@ const handleNavSelect = (index: string) => {
     router.push('/memory/docs');
   } else if (index === 'files') {
     router.push('/files');
+  } else if (index === 'chat') {
+    router.push('/chat');
   }
 };
 
@@ -430,82 +386,7 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  padding: 0 24px;
-  height: 56px;
 
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-
-    .app-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #303133;
-      margin: 0;
-      white-space: nowrap;
-    }
-
-    .header-nav-links {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-
-      .el-button {
-        height: 56px;
-        border: none;
-        border-radius: 0;
-        font-size: 14px;
-        padding: 0 16px;
-        transition: background 0.2s;
-
-        // 图标和文字间距 5px
-        .el-icon {
-          margin-right: 5px;
-        }
-
-        // 激活态：浅灰背景，正常字号
-        &.el-button--primary {
-          background: #f0f2f5;
-          color: #303133;
-          font-weight: 500;
-          --el-button-bg-color: #f0f2f5;
-          --el-button-border-color: transparent;
-          --el-button-hover-bg-color: #f0f2f5;
-          --el-button-hover-border-color: transparent;
-          --el-button-active-bg-color: #f0f2f5;
-          --el-button-active-border-color: transparent;
-        }
-
-        // 非激活态：透明背景
-        &.el-button--text {
-          color: #606266;
-          font-weight: 400;
-          --el-button-text-color: #606266;
-          --el-button-hover-text-color: #303133;
-        }
-      }
-    }
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-
-    .username {
-      margin-left: 8px;
-      font-size: 13px;
-      color: #909399;
-    }
-  }
-}
 
 .app-main {
   flex: 1;
