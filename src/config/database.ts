@@ -355,4 +355,108 @@ export function deleteUserFile(id: number, userId: number): { stored_name: strin
   return { stored_name: file.stored_name };
 }
 
+// ========== AI 聊天会话表（跨端持久化） ==========
+// 会话 id 沿用前端生成的 UUID，保证 PC 端与移动端识别的是同一个会话
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT '新对话',
+    model_name TEXT DEFAULT '',
+    messages TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (id, user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`);
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated ON chat_sessions(user_id, updated_at DESC)');
+
+export interface ChatSessionRecord {
+  id: string;
+  title: string;
+  modelName: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: any[];
+}
+
+interface ChatSessionRow {
+  id: string;
+  title: string | null;
+  model_name: string | null;
+  messages: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+}
+
+/** 数据库行 → 接口返回结构（messages 反序列化，异常时降级为空数组） */
+function mapChatSessionRow(row: ChatSessionRow): ChatSessionRecord {
+  let messages: any[] = [];
+  try {
+    const parsed = JSON.parse(row.messages || '[]');
+    if (Array.isArray(parsed)) messages = parsed;
+  } catch (e) {
+    messages = [];
+  }
+  return {
+    id: row.id,
+    title: row.title || '新对话',
+    modelName: row.model_name || '',
+    createdAt: row.created_at || 0,
+    updatedAt: row.updated_at || 0,
+    messages,
+  };
+}
+
+/** 获取用户全部会话（按最近更新倒序） */
+export function listChatSessions(userId: number): ChatSessionRecord[] {
+  const rows = db.prepare(
+    'SELECT id, title, model_name, messages, created_at, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC'
+  ).all(userId) as ChatSessionRow[];
+  return rows.map(mapChatSessionRow);
+}
+
+/** 获取用户单个会话 */
+export function getChatSession(id: string, userId: number): ChatSessionRecord | null {
+  const row = db.prepare(
+    'SELECT id, title, model_name, messages, created_at, updated_at FROM chat_sessions WHERE id = ? AND user_id = ?'
+  ).get(id, userId) as ChatSessionRow | undefined;
+  return row ? mapChatSessionRow(row) : null;
+}
+
+/** 新增或更新会话（upsert，created_at 以首次写入为准） */
+export function upsertChatSession(userId: number, session: ChatSessionRecord): void {
+  db.prepare(`
+    INSERT INTO chat_sessions (id, user_id, title, model_name, messages, created_at, updated_at)
+    VALUES (@id, @userId, @title, @modelName, @messages, @createdAt, @updatedAt)
+    ON CONFLICT(id, user_id) DO UPDATE SET
+      title = excluded.title,
+      model_name = excluded.model_name,
+      messages = excluded.messages,
+      updated_at = excluded.updated_at
+  `).run({
+    id: session.id,
+    userId,
+    title: session.title,
+    modelName: session.modelName,
+    messages: JSON.stringify(session.messages || []),
+    createdAt: session.createdAt || Date.now(),
+    updatedAt: session.updatedAt || Date.now(),
+  });
+}
+
+/** 删除会话，返回是否命中记录 */
+export function deleteChatSession(id: string, userId: number): boolean {
+  const result = db.prepare('DELETE FROM chat_sessions WHERE id = ? AND user_id = ?').run(id, userId);
+  return result.changes > 0;
+}
+
+/** 清空用户全部会话，返回删除条数 */
+export function deleteAllChatSessions(userId: number): number {
+  const result = db.prepare('DELETE FROM chat_sessions WHERE user_id = ?').run(userId);
+  return result.changes;
+}
+
 export default db;

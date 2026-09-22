@@ -3,10 +3,22 @@
  *
  * 负责 AI 聊天页面的多会话状态、当前活跃会话、消息收发与 AgentLoop 编排调度，
  * 以及会话持久化与可用模型加载（严格过滤 isDisable === true）。
+ *
+ * 持久化策略（跨端一致）：
+ * 1. 服务端 `chat_sessions` 表为唯一数据源，PC 端与移动端登录同一账号即可看到同一批会话；
+ * 2. localStorage 仅作为离线缓存与首屏秒开的降级手段；
+ * 3. 首次打开时若服务端为空而本地有历史会话，自动迁移上云；两端都有时按 updatedAt 取新者。
  */
 
 import { ref, computed, watch } from 'vue';
 import { getModels, type Model } from '../../../api/modelService';
+import {
+  getChatSessions,
+  saveChatSessions,
+  deleteChatSession,
+  clearChatSessions,
+  type ChatSessionPayload,
+} from '../../../api/chatSessionService';
 import AgentLoop, { type IToolCallView } from '../core/AgentLoop';
 import type { ILlmMessage } from '../core/LlmClient';
 import { generateUUID } from '../../../utils/uuid';
@@ -44,12 +56,107 @@ export interface IChatSession {
 const STORAGE_KEY = 'mm_ai_chat_sessions_v1';
 const LAST_ACTIVE_SESSION_KEY = 'mm_ai_chat_active_session_id';
 
+/** 服务端同步节流间隔（毫秒）：流式输出期间避免逐 token 写库 */
+const SERVER_FLUSH_INTERVAL = 1500;
+/** 本地缓存写入节流间隔（毫秒） */
+const LOCAL_CACHE_INTERVAL = 800;
+
 // 全局响应式状态
 const sessions = ref<IChatSession[]>([]);
 const currentSessionId = ref<string>('');
 const isStreaming = ref<boolean>(false);
+const isSyncing = ref<boolean>(false);
 const availableModels = ref<Model[]>([]);
 const isModelsLoading = ref<boolean>(false);
+
+// ===== 同步调度内部状态（模块级单例，PC 与移动端共用同一份逻辑） =====
+let isInitialized = false;
+let pendingFlushPromise: Promise<void> | null = null;
+let serverFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let localCacheTimer: ReturnType<typeof setTimeout> | null = null;
+let lastServerFlush = 0;
+let lastLocalCache = 0;
+const dirtySessionIds = new Set<string>();
+
+/** 归一化服务端/本地缓存中读取到的会话，脏数据直接丢弃 */
+function normalizeSession(raw: any): IChatSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (!id) return null;
+
+  const createdAt = Number(raw.createdAt);
+  const updatedAt = Number(raw.updatedAt);
+  return {
+    id,
+    title: typeof raw.title === 'string' && raw.title.trim() ? raw.title : '新对话',
+    modelName: typeof raw.modelName === 'string' ? raw.modelName : '',
+    createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : Date.now(),
+    messages: Array.isArray(raw.messages) ? raw.messages : [],
+  };
+}
+
+/** 会话 → 服务端同步载荷 */
+function toPayload(session: IChatSession): ChatSessionPayload {
+  return {
+    id: session.id,
+    title: session.title,
+    modelName: session.modelName,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    messages: session.messages as ChatSessionPayload['messages'],
+  };
+}
+
+// ==================== 本地缓存（离线降级用，不下发网络） ====================
+
+/** 读取本地缓存的会话列表 */
+function readLocalCache(): IChatSession[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => normalizeSession(item))
+      .filter((s): s is IChatSession => !!s);
+  } catch (e) {
+    console.warn('[useChatStore] 读取本地会话缓存失败:', e);
+    return [];
+  }
+}
+
+/** 立即写入本地缓存 */
+function writeLocalCache(): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.value));
+    if (currentSessionId.value) {
+      localStorage.setItem(LAST_ACTIVE_SESSION_KEY, currentSessionId.value);
+    }
+  } catch (e) {
+    console.warn('[useChatStore] 写入本地会话缓存失败:', e);
+  }
+}
+
+/** 节流写入本地缓存，避免流式输出时逐 token 序列化全量会话 */
+function scheduleLocalCache(immediate = false): void {
+  if (immediate) {
+    if (localCacheTimer) {
+      clearTimeout(localCacheTimer);
+      localCacheTimer = null;
+    }
+    lastLocalCache = Date.now();
+    writeLocalCache();
+    return;
+  }
+  if (localCacheTimer) return;
+  const wait = Math.max(0, LOCAL_CACHE_INTERVAL - (Date.now() - lastLocalCache));
+  localCacheTimer = setTimeout(() => {
+    localCacheTimer = null;
+    lastLocalCache = Date.now();
+    writeLocalCache();
+  }, wait);
+}
 
 export function useChatStore() {
   const agentLoop = AgentLoop.getInstance();
@@ -72,53 +179,156 @@ export function useChatStore() {
     }
   }
 
-  /**
-   * 初始化会话数据（从 localStorage 恢复）
-   */
-  function initSessions(): void {
-    if (sessions.value.length > 0) return;
+  // ==================== 服务端同步（跨端一致的关键） ====================
 
+  /** 标记会话为待同步，并调度一次节流的批量提交 */
+  function markSessionDirty(id: string): void {
+    if (!id) return;
+    dirtySessionIds.add(id);
+    scheduleServerFlush();
+  }
+
+  /** 调度服务端同步：强制间隔 SERVER_FLUSH_INTERVAL，天然去抖 */
+  function scheduleServerFlush(immediate = false): void {
+    if (immediate) {
+      if (serverFlushTimer) {
+        clearTimeout(serverFlushTimer);
+        serverFlushTimer = null;
+      }
+      void flushDirtySessions();
+      return;
+    }
+    if (serverFlushTimer || dirtySessionIds.size === 0) return;
+    const wait = Math.max(0, SERVER_FLUSH_INTERVAL - (Date.now() - lastServerFlush));
+    serverFlushTimer = setTimeout(() => {
+      serverFlushTimer = null;
+      void flushDirtySessions();
+    }, wait);
+  }
+
+  /** 把标记为脏的会话批量提交到服务端（同一时刻只允许一次在途提交） */
+  function flushDirtySessions(): Promise<void> {
+    // 已有提交在途：复用同一个 Promise，其收尾逻辑会接力处理期间新产生的脏数据
+    if (pendingFlushPromise) return pendingFlushPromise;
+
+    const task = (async () => {
+      const ids = Array.from(dirtySessionIds);
+      dirtySessionIds.clear();
+      lastServerFlush = Date.now();
+      let succeeded = true;
+
+      try {
+        const payloads = ids
+          .map((id) => sessions.value.find((s) => s.id === id))
+          .filter((s): s is IChatSession => !!s)
+          .map(toPayload);
+        if (payloads.length > 0) {
+          await saveChatSessions(payloads);
+        }
+      } catch (e) {
+        // 同步失败：恢复脏标记，等下一次变更或显式 flush 时重试（不重排定时器，避免服务不可用时死循环）
+        succeeded = false;
+        ids.forEach((id) => dirtySessionIds.add(id));
+        console.warn('[useChatStore] 会话同步到服务端失败，稍后重试:', e);
+      }
+
+      // 本次提交期间又产生了新的脏数据：节流接力再提交一次
+      if (succeeded && dirtySessionIds.size > 0 && !serverFlushTimer) {
+        scheduleServerFlush();
+      }
+    })();
+
+    // tracked 的 finally 先于其结算执行，因此 await 它的调用方恢复时 pendingFlushPromise 已释放
+    const tracked = task.finally(() => {
+      pendingFlushPromise = null;
+    });
+    pendingFlushPromise = tracked;
+    return tracked;
+  }
+
+  /** 恢复上次活跃会话（仅本机记录，互不干扰各端当前打开的会话） */
+  function restoreActiveSession(list: IChatSession[]): void {
+    if (list.length === 0) return;
+    const lastId = localStorage.getItem(LAST_ACTIVE_SESSION_KEY);
+    if (lastId && list.some((s) => s.id === lastId)) {
+      currentSessionId.value = lastId;
+      return;
+    }
+    if (!list.some((s) => s.id === currentSessionId.value)) {
+      currentSessionId.value = list[0].id;
+    }
+  }
+
+  /**
+   * 初始化会话数据：
+   * 先用本地缓存秒开，再与服务端对齐（迁移本地独有会话 + 合并两端更新）
+   */
+  async function initSessions(): Promise<void> {
+    if (isInitialized) return;
+    isInitialized = true;
+
+    const localSessions = readLocalCache();
+    sessions.value = localSessions;
+    restoreActiveSession(localSessions);
+
+    isSyncing.value = true;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          sessions.value = parsed;
+      const res = await getChatSessions();
+      const remote = (res?.data || [])
+        .map((item) => normalizeSession(item))
+        .filter((s): s is IChatSession => !!s);
+
+      const remoteMap = new Map(remote.map((s) => [s.id, s]));
+
+      // 服务端没有的 / 本地更新时间更晚的，都需要回推服务端
+      const needPush = localSessions.filter((s) => {
+        const remoteItem = remoteMap.get(s.id);
+        if (!remoteItem) return true;
+        return (s.updatedAt || 0) > (remoteItem.updatedAt || 0);
+      });
+
+      if (needPush.length > 0) {
+        try {
+          await saveChatSessions(needPush.map(toPayload));
+        } catch (e) {
+          console.warn('[useChatStore] 本地会话迁移到服务端失败，保留本地副本:', e);
         }
       }
-    } catch (e) {
-      console.warn('[useChatStore] 恢复会话缓存失败:', e);
-    }
 
-    const lastId = localStorage.getItem(LAST_ACTIVE_SESSION_KEY);
-    if (lastId && sessions.value.some((s) => s.id === lastId)) {
-      currentSessionId.value = lastId;
-    } else if (sessions.value.length > 0) {
-      currentSessionId.value = sessions.value[0].id;
-    } else {
-      createNewSession();
-    }
-  }
+      // 合并：以服务端为准，但本地更新时间更晚（已回推）的会话用本地版本
+      const pushedIds = new Set(needPush.map((s) => s.id));
+      const mergedMap = new Map<string, IChatSession>();
+      remote.forEach((s) => mergedMap.set(s.id, s));
+      localSessions.forEach((s) => {
+        if (!mergedMap.has(s.id) || pushedIds.has(s.id)) {
+          mergedMap.set(s.id, s);
+        }
+      });
 
-  /**
-   * 持久化保存会话
-   */
-  function persistSessions(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.value));
-      if (currentSessionId.value) {
-        localStorage.setItem(LAST_ACTIVE_SESSION_KEY, currentSessionId.value);
+      const merged = Array.from(mergedMap.values()).sort(
+        (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
+      );
+      sessions.value = merged;
+      restoreActiveSession(merged);
+      if (merged.length === 0) {
+        createNewSession();
       }
     } catch (e) {
-      console.warn('[useChatStore] 持久化会话失败:', e);
+      console.warn('[useChatStore] 服务端会话加载失败，降级使用本地缓存:', e);
+      if (sessions.value.length === 0) {
+        createNewSession();
+      }
+    } finally {
+      isSyncing.value = false;
+      scheduleLocalCache(true);
     }
   }
 
-  // 深度监听会话变化并自动持久化
+  // 深度监听会话变化：节流写入本地缓存（服务端由 dirty 标记驱动）
   watch(
     sessions,
     () => {
-      persistSessions();
+      scheduleLocalCache();
     },
     { deep: true }
   );
@@ -126,7 +336,11 @@ export function useChatStore() {
   // 监听当前会话切换
   watch(currentSessionId, (newId) => {
     if (newId) {
-      localStorage.setItem(LAST_ACTIVE_SESSION_KEY, newId);
+      try {
+        localStorage.setItem(LAST_ACTIVE_SESSION_KEY, newId);
+      } catch (e) {
+        // 忽略隐私模式下的写入失败
+      }
     }
   });
 
@@ -154,6 +368,8 @@ export function useChatStore() {
 
     sessions.value.unshift(newSession);
     currentSessionId.value = newId;
+    markSessionDirty(newId);
+    scheduleLocalCache(true);
     return newId;
   }
 
@@ -176,6 +392,7 @@ export function useChatStore() {
     if (idx === -1) return;
 
     sessions.value.splice(idx, 1);
+    dirtySessionIds.delete(id);
 
     if (currentSessionId.value === id) {
       if (sessions.value.length > 0) {
@@ -184,6 +401,11 @@ export function useChatStore() {
         createNewSession();
       }
     }
+
+    scheduleLocalCache(true);
+    void deleteChatSession(id).catch((e) => {
+      console.warn('[useChatStore] 删除服务端会话失败:', e);
+    });
   }
 
   /**
@@ -194,6 +416,7 @@ export function useChatStore() {
     if (s) {
       s.title = title.trim() || '未命名对话';
       s.updatedAt = Date.now();
+      markSessionDirty(s.id);
     }
   }
 
@@ -204,6 +427,7 @@ export function useChatStore() {
     if (currentSession.value) {
       currentSession.value.messages = [];
       currentSession.value.updatedAt = Date.now();
+      markSessionDirty(currentSession.value.id);
     }
   }
 
@@ -214,6 +438,51 @@ export function useChatStore() {
     if (currentSession.value) {
       currentSession.value.modelName = modelName;
       currentSession.value.updatedAt = Date.now();
+      markSessionDirty(currentSession.value.id);
+    }
+  }
+
+  /**
+   * 立即把待同步会话提交到服务端（供发送结束、页面隐藏等时机调用）
+   */
+  async function syncSessionsNow(): Promise<void> {
+    scheduleLocalCache(true);
+    await flushDirtySessions();
+    // 本次提交期间又产生了新的脏数据：接力再提交一次，确保调用方恢复时内容已落库
+    if (dirtySessionIds.size > 0) {
+      await flushDirtySessions();
+    }
+  }
+
+  /**
+   * 清空当前用户的全部会话（本地 + 服务端），清空后自动创建一个空白会话
+   */
+  async function clearAllSessions(): Promise<void> {
+    // 先等在途提交落定，避免 DELETE 之后又被在途的 upsert 把旧会话写回
+    await flushDirtySessions();
+
+    sessions.value = [];
+    currentSessionId.value = '';
+    dirtySessionIds.clear();
+    if (serverFlushTimer) {
+      clearTimeout(serverFlushTimer);
+      serverFlushTimer = null;
+    }
+
+    let failed = false;
+    try {
+      await clearChatSessions();
+    } catch (e) {
+      failed = true;
+      console.warn('[useChatStore] 清空服务端会话失败:', e);
+    }
+
+    // 无论服务端结果如何，本地先给用户一个可继续对话的空白会话
+    createNewSession();
+    scheduleLocalCache(true);
+
+    if (failed) {
+      throw new Error('服务端清空失败，请检查网络后重试');
     }
   }
 
@@ -250,6 +519,7 @@ export function useChatStore() {
       const summaryTitle = (trimmedText || attachments[0]?.name || '新对话').slice(0, 18);
       session.title = summaryTitle;
     }
+    markSessionDirty(session.id);
 
     // 2. 构造传给 LLM 的上下文历史
     const llmMessages: ILlmMessage[] = [];
@@ -393,14 +663,17 @@ export function useChatStore() {
           onTextDelta: (delta) => {
             targetMsg.content = (targetMsg.content || '') + delta;
             session.updatedAt = Date.now();
+            markSessionDirty(session.id);
           },
           onReasoning: (delta) => {
             targetMsg.reasoning = (targetMsg.reasoning || '') + delta;
             session.updatedAt = Date.now();
+            markSessionDirty(session.id);
           },
           onToolCalls: (calls) => {
             targetMsg.toolCalls = [...calls];
             session.updatedAt = Date.now();
+            markSessionDirty(session.id);
           },
           onToolCallUpdate: (callId, patch) => {
             if (targetMsg.toolCalls) {
@@ -408,17 +681,20 @@ export function useChatStore() {
               if (item) {
                 Object.assign(item, patch);
                 session.updatedAt = Date.now();
+                markSessionDirty(session.id);
               }
             }
           },
           onDone: () => {
             isStreaming.value = false;
             session.updatedAt = Date.now();
+            markSessionDirty(session.id);
           },
           onError: (errMsg) => {
             isStreaming.value = false;
             targetMsg.error = errMsg;
             session.updatedAt = Date.now();
+            markSessionDirty(session.id);
           },
         },
       });
@@ -427,7 +703,8 @@ export function useChatStore() {
       targetMsg.error = err.message || '运行出错';
     } finally {
       isStreaming.value = false;
-      persistSessions();
+      markSessionDirty(session.id);
+      await syncSessionsNow();
     }
   }
 
@@ -444,6 +721,7 @@ export function useChatStore() {
     currentSessionId,
     currentSession,
     isStreaming,
+    isSyncing,
     availableModels,
     isModelsLoading,
     loadModels,
@@ -451,10 +729,22 @@ export function useChatStore() {
     createNewSession,
     switchSession,
     deleteSession,
+    clearAllSessions,
     updateSessionTitle,
     clearCurrentMessages,
     setSessionModel,
     sendMessage,
     stopGeneration,
+    syncSessionsNow,
   };
+}
+
+// 页面隐藏/卸载时尽力落盘本地缓存，避免未同步内容丢失
+if (typeof window !== 'undefined') {
+  const flushLocalCache = () => {
+    if (sessions.value.length === 0) return;
+    writeLocalCache();
+  };
+  window.addEventListener('pagehide', flushLocalCache);
+  window.addEventListener('beforeunload', flushLocalCache);
 }

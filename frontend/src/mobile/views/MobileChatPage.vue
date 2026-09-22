@@ -170,7 +170,7 @@
     <van-popup
       v-model:show="showSessionDrawer"
       position="left"
-      :style="{ width: '75%', height: '100%' }"
+      :style="{ width: '78%', height: '100%' }"
     >
       <div class="session-drawer">
         <div class="drawer-header">
@@ -179,9 +179,12 @@
             新对话
           </van-button>
         </div>
+        <div class="drawer-search">
+          <van-search v-model="sessionKeyword" placeholder="搜索会话..." shape="round" />
+        </div>
         <div class="session-list">
           <div
-            v-for="session in sessions"
+            v-for="session in filteredSessions"
             :key="session.id"
             class="session-list-item"
             :class="{ 'is-active': session.id === currentSessionId }"
@@ -190,20 +193,32 @@
             <div class="session-item-content">
               <van-icon name="chat-o" size="16" class="session-icon" />
               <div class="session-item-info">
-                <div class="session-item-title">{{ session.title }}</div>
-                <div class="session-item-meta">{{ formatTime(session.updatedAt) }} · {{ session.messages.length }} 条</div>
+                <div class="session-item-title">{{ getSessionDisplayTitle(session) }}</div>
+                <div class="session-item-desc">{{ getLastMessageSnippet(session) }}</div>
               </div>
             </div>
             <van-button
               size="mini"
-              type="danger"
               plain
-              icon="delete-o"
-              class="session-delete-btn"
-              @click.stop="handleDeleteSession(session.id)"
+              icon="ellipsis"
+              class="session-more-btn"
+              @click.stop="openSessionActions(session)"
             />
           </div>
-          <van-empty v-if="sessions.length === 0" description="暂无会话" />
+          <van-empty v-if="filteredSessions.length === 0" description="无匹配会话" />
+        </div>
+        <div class="drawer-footer">
+          <van-button
+            size="small"
+            type="danger"
+            plain
+            block
+            icon="delete-o"
+            :disabled="sessions.length === 0"
+            @click="handleClearAllSessions"
+          >
+            清空全部会话
+          </van-button>
         </div>
       </div>
     </van-popup>
@@ -216,6 +231,29 @@
       cancel-text="取消"
       @select="handleModelSelect"
     />
+
+    <!-- 会话操作面板（与 PC 端下拉菜单能力一致） -->
+    <van-action-sheet
+      v-model:show="showSessionActions"
+      :actions="sessionActions"
+      cancel-text="取消"
+      @select="handleSessionActionSelect"
+    />
+
+    <!-- 重命名会话 -->
+    <van-dialog
+      v-model:show="showRenameDialog"
+      title="重命名会话"
+      show-cancel-button
+      :before-close="handleRenameBeforeClose"
+    >
+      <van-field
+        v-model="renameInput"
+        placeholder="请输入新的会话标题"
+        maxlength="50"
+        class="rename-field"
+      />
+    </van-dialog>
   </div>
 </template>
 
@@ -223,7 +261,12 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { showToast, showConfirmDialog } from 'vant';
 import MobileNavDropdown from '@/mobile/components/MobileNavDropdown.vue';
-import { useChatStore } from '@/views/chat/composables/useChatStore';
+import { useChatStore, type IChatSession } from '@/views/chat/composables/useChatStore';
+import {
+  getSessionDisplayTitle,
+  getLastMessageSnippet,
+  matchSessionKeyword,
+} from '@/views/chat/utils/sessionDisplay';
 
 const {
   sessions,
@@ -237,6 +280,8 @@ const {
   createNewSession,
   switchSession,
   deleteSession,
+  clearAllSessions,
+  updateSessionTitle,
   clearCurrentMessages,
   setSessionModel,
   sendMessage,
@@ -247,6 +292,26 @@ const {
 const inputText = ref('');
 const showSessionDrawer = ref(false);
 const showModelPicker = ref(false);
+
+// 会话列表搜索与操作
+const sessionKeyword = ref('');
+const showSessionActions = ref(false);
+const showRenameDialog = ref(false);
+const renameInput = ref('');
+const actionTarget = ref<IChatSession | null>(null);
+const renameTarget = ref<IChatSession | null>(null);
+
+/** 会话操作项（与 PC 端会话项下拉菜单保持一致） */
+const sessionActions = [
+  { name: '重命名', value: 'rename' },
+  { name: '删除会话', value: 'delete', color: '#ee0a24' },
+];
+
+/** 搜索过滤：与 PC 端共用同一套匹配逻辑 */
+const filteredSessions = computed(() => {
+  if (!sessionKeyword.value.trim()) return sessions.value;
+  return sessions.value.filter((s) => matchSessionKeyword(s, sessionKeyword.value));
+});
 
 // VisualViewport：动态跟踪键盘弹出后的实际可视高度，消除底部空白
 const pageStyle = ref<Record<string, string>>({});
@@ -274,15 +339,6 @@ const modelActions = computed(() =>
 );
 
 // 工具函数
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  }
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-}
-
 function toggleReasoning(msgId: string) {
   if (expandedReasoning.value.has(msgId)) {
     expandedReasoning.value.delete(msgId);
@@ -346,9 +402,73 @@ async function handleDeleteSession(id: string) {
   try {
     await showConfirmDialog({ title: '确认删除', message: '删除后无法恢复此对话' });
     deleteSession(id);
+    showToast({ type: 'success', message: '会话已删除' });
   } catch {
     // 用户取消
   }
+}
+
+// 清空全部会话（本地 + 服务端）
+async function handleClearAllSessions() {
+  const total = sessions.value.length;
+  if (total === 0) return;
+
+  try {
+    await showConfirmDialog({
+      title: '清空全部会话',
+      message: `确定清空全部 ${total} 个会话吗？此操作不可撤销。`,
+    });
+  } catch {
+    return; // 用户取消
+  }
+
+  try {
+    await clearAllSessions();
+    sessionKeyword.value = '';
+    showSessionDrawer.value = false;
+    scrollToBottom();
+    showToast({ type: 'success', message: '已清空全部会话' });
+  } catch (err: any) {
+    showToast({ type: 'fail', message: err?.message || '清空失败' });
+  }
+}
+
+// 打开会话操作面板
+function openSessionActions(session: IChatSession) {
+  actionTarget.value = session;
+  showSessionActions.value = true;
+}
+
+// 会话操作选择：重命名 / 删除
+function handleSessionActionSelect(action: { value?: string }) {
+  const session = actionTarget.value;
+  if (!session) return;
+
+  if (action.value === 'rename') {
+    renameTarget.value = session;
+    renameInput.value = getSessionDisplayTitle(session);
+    showRenameDialog.value = true;
+  } else if (action.value === 'delete') {
+    void handleDeleteSession(session.id);
+  }
+}
+
+// 重命名确认（返回 false 阻止弹窗关闭）
+function handleRenameBeforeClose(action: string): boolean {
+  if (action !== 'confirm') return true;
+
+  const title = renameInput.value.trim();
+  if (!title) {
+    showToast('会话标题不能为空');
+    return false;
+  }
+
+  const target = renameTarget.value;
+  if (target) {
+    updateSessionTitle(target.id, title);
+    showToast({ type: 'success', message: '已重命名' });
+  }
+  return true;
 }
 
 // 选择模型
@@ -380,8 +500,8 @@ onMounted(async () => {
     updateViewportSize();
   }
 
-  initSessions();
-  await loadModels();
+  // 会话与服务端对齐（跨端同步）与模型列表并行加载
+  await Promise.all([initSessions(), loadModels()]);
   scrollToBottom();
 });
 
@@ -730,10 +850,28 @@ onUnmounted(() => {
     }
   }
 
+  .drawer-search {
+    padding: 4px 0;
+    border-bottom: 1px solid #ebedf0;
+
+    :deep(.van-search) {
+      padding: 6px 10px;
+      background: #fff;
+    }
+  }
+
   .session-list {
     flex: 1;
     overflow-y: auto;
     padding: 8px 0;
+  }
+
+  .drawer-footer {
+    flex-shrink: 0;
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    border-top: 1px solid #ebedf0;
+    background: #fff;
   }
 }
 
@@ -780,16 +918,26 @@ onUnmounted(() => {
       text-overflow: ellipsis;
     }
 
-    .session-item-meta {
+    /* 与 PC 端一致：展示最后一条消息摘要 */
+    .session-item-desc {
       font-size: 11px;
       color: #c8c9cc;
       margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
-  .session-delete-btn {
+  .session-more-btn {
     flex-shrink: 0;
     margin-left: 8px;
+    color: #969799;
   }
+}
+
+/* 重命名会话输入框 */
+.rename-field {
+  padding: 12px 16px 16px;
 }
 </style>

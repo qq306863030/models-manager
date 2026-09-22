@@ -125,8 +125,8 @@ async function handleSendMessage(text: string, attachments: IAttachmentView[]) {
 }
 
 onMounted(async () => {
-  await loadModels();
-  initSessions();
+  // 会话与服务端对齐（跨端同步）与模型列表并行加载
+  await Promise.all([initSessions(), loadModels()]);
 });
 </script>
 

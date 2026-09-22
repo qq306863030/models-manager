@@ -33,7 +33,9 @@
         </div>
 
         <div class="item-content">
-          <div class="item-title" :title="session.title">{{ session.title || '新对话' }}</div>
+          <div class="item-title" :title="getSessionDisplayTitle(session)">
+            {{ getSessionDisplayTitle(session) }}
+          </div>
           <div class="item-desc" :title="getLastMessageSnippet(session)">
             {{ getLastMessageSnippet(session) }}
           </div>
@@ -71,6 +73,11 @@ import { ref, computed } from 'vue';
 import { Plus, Search, ChatDotRound, MoreFilled, Edit, Delete } from '@element-plus/icons-vue';
 import { ElMessageBox } from 'element-plus';
 import type { IChatSession } from '../composables/useChatStore';
+import {
+  getSessionDisplayTitle,
+  getLastMessageSnippet,
+  matchSessionKeyword,
+} from '../utils/sessionDisplay';
 
 const props = defineProps<{
   sessions: IChatSession[];
@@ -87,21 +94,9 @@ const emit = defineEmits<{
 const searchKeyword = ref('');
 
 const filteredSessions = computed(() => {
-  const kw = searchKeyword.value.trim().toLowerCase();
-  if (!kw) return props.sessions;
-  return props.sessions.filter((s) => {
-    if (s.title && s.title.toLowerCase().includes(kw)) return true;
-    return s.messages.some((m) => m.content && m.content.toLowerCase().includes(kw));
-  });
+  if (!searchKeyword.value.trim()) return props.sessions;
+  return props.sessions.filter((s) => matchSessionKeyword(s, searchKeyword.value));
 });
-
-function getLastMessageSnippet(session: IChatSession): string {
-  if (!session.messages || session.messages.length === 0) {
-    return '暂无消息';
-  }
-  const lastMsg = session.messages[session.messages.length - 1];
-  return lastMsg.content || (lastMsg.attachments?.[0]?.name ? `[附件: ${lastMsg.attachments[0].name}]` : '...');
-}
 
 function handleCommand(command: string, session: IChatSession) {
   if (command === 'rename') {

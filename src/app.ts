@@ -19,6 +19,7 @@ import mcpUserMemoryRouter from './routes/mcpUserMemory';
 import mcpUserDocumentRouter from './routes/mcpUserDocument';
 import mcpBridgeRouter from './routes/mcpBridge';
 import requestLogsRouter from './routes/requestLogs';
+import chatSessionsRouter from './routes/chatSessions';
 import { errorBroadcaster } from './utils/errorBroadcaster';
 import { requestTracker } from './utils/requestTracker';
 import { formatDate, formatTimestamp } from './utils/timezone';
@@ -159,6 +160,7 @@ app.use('/api/mcp-records', mcpRecordsRouter);
 app.use('/api/agent-memory', agentMemoryRouter);
 app.use('/api/user-files', userFilesRouter);
 app.use('/api/request-logs', requestLogsRouter);
+app.use('/api/chat/sessions', chatSessionsRouter);
 app.use('/api/mcp', mcpBridgeRouter);
 
 // 服务端配置（供前端读取）
