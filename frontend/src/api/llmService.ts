@@ -18,3 +18,7 @@ export interface LlmCompany {
 export const getLlmModels = () => {
   return request.get<{ success: boolean; data: LlmCompany[] }>('/llm-models');
 };
+
+export const getAllModels = () => {
+  return request.get<{ success: boolean; data: LlmModelItem[] }>('/llm-models/models');
+};

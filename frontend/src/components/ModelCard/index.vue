@@ -105,6 +105,14 @@
             title="测试连接"
             @mousedown.stop
             @click="handleTest" />
+          <el-button
+            class="state-btn top-btn"
+            size="small"
+            :icon="Top"
+            circle
+            title="置顶"
+            @mousedown.stop
+            @click="handleMoveToTop" />
         </div>
 
         <!-- 操作按钮 -->
@@ -186,7 +194,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy, Rank, VideoPlay } from '@element-plus/icons-vue'
+import { Edit, Delete, CopyDocument, Check, Close, Lock, Unlock, CircleClose, CircleCheck, DocumentCopy, Rank, VideoPlay, Top } from '@element-plus/icons-vue'
 import type { Model, ModelForm } from '@/api/modelService'
 import { CAPABILITIES_OPTIONS } from '@/types/enum'
 import type { ModelCardProps, ModelCardEmits } from './index'
@@ -300,6 +308,10 @@ const handleToggleLock = () => {
 
 const handleToggleDisable = () => {
   emit('toggle-disable', props.model.id)
+}
+
+const handleMoveToTop = () => {
+  emit('move-to-top', props.model.id)
 }
 
 // ========== 测试连接 ==========

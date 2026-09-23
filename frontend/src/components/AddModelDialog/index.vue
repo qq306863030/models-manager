@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, watchEffect } from 'vue'
+import { ref, reactive, computed, watch, watchEffect, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import type { ModelRowForm } from '@/api/modelService'
@@ -166,6 +166,7 @@ import { getModels } from '@/api/modelService'
 import type { AddFormData, AddFormRow, ModelLabelOption, AddModelDialogEmits } from './index'
 import { API_FORMAT_OPTIONS, CAPABILITIES_OPTIONS, DEFAULT_CAPABILITIES } from '@/types/enum'
 import { getLlmModels, type LlmCompany } from '@/api/llmService'
+import { useAllModels } from '@/composables/useAllModels'
 
 defineOptions({ name: 'AddModelDialog' })
 
@@ -195,32 +196,11 @@ const vendorOptions = computed(() =>
   })),
 )
 
-// 所有模型去重列表（用于模型名称下拉）
-const allModelOptions = computed(() => {
-  const seen = new Set<string>()
-  const options: { value: string; label: string }[] = []
-  for (const company of llmCompanies.value) {
-    for (const m of company.models) {
-      if (!seen.has(m.model)) {
-        seen.add(m.model)
-        options.push({ value: m.model, label: m.model })
-      }
-    }
-  }
-  return options
-})
+// 从 models.json 获取所有模型数据与配置映射
+const { allModelOptions, modelDataMap, loadAllModels } = useAllModels()
 
-// 模型名称 → 配置数据映射
-const modelDataMap = computed(() => {
-  const map = new Map<string, LlmCompany['models'][number]>()
-  for (const company of llmCompanies.value) {
-    for (const m of company.models) {
-      if (!map.has(m.model)) {
-        map.set(m.model, m)
-      }
-    }
-  }
-  return map
+onMounted(() => {
+  loadAllModels()
 })
 
 // 行数据 key 计数器
@@ -394,6 +374,7 @@ const openDialog = async () => {
   formData.api_format = 1
   formData.rows = [createEmptyRow()]
 
+  loadAllModels()
   if (llmCompanies.value.length === 0) {
     await loadLlmData()
   }

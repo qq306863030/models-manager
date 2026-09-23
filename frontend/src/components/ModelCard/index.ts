@@ -26,4 +26,5 @@ export interface ModelCardEmits {
   (e: 'toggle-lock', id: number): void
   (e: 'toggle-disable', id: number): void
   (e: 'submit-edit', id: number, data: ModelForm): void
+  (e: 'move-to-top', id: number): void
 }

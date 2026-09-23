@@ -65,7 +65,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-// 复制模型（仅复制基础信息，不复制统计数据）
+// 复制模型（仅复制基础信息，不复制统计数据，插入到当前模型之后）
 router.post('/:id/copy', (req: Request, res: Response) => {
   try {
     const userId = getCurrentUserId(req);
@@ -74,39 +74,66 @@ router.post('/:id/copy', (req: Request, res: Response) => {
       return;
     }
 
-    const model: any = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(req.params.id, userId);
+    const modelId = Number(req.params.id);
+    const model: any = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(modelId, userId);
     if (!model) {
       res.status(404).json({ success: false, message: '模型不存在' });
       return;
     }
 
-    // 查找当前用户的最大 sort_index
-    const maxRow: any = db.prepare('SELECT MAX(sort_index) as maxIdx FROM models WHERE user_id = ?').get(userId);
-    const nextIndex = (maxRow.maxIdx ?? -1) + 1;
+    // 获取当前用户的所有模型，按当前显示顺序排列
+    const currentModels: any[] = db.prepare(
+      'SELECT id FROM models WHERE user_id = ? ORDER BY CASE WHEN sort_index = -1 THEN 999999 ELSE sort_index END ASC, created_at ASC'
+    ).all(userId);
 
-    const stmt = db.prepare(
+    const targetIdx = currentModels.findIndex(m => m.id === modelId);
+
+    const insertStmt = db.prepare(
       'INSERT INTO models (name, model_name, url, max_content_length, max_token, api_key, sort_index, api_format, model_label_id, capabilities, isLock, isDisable, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    const result = stmt.run(
-      model.name + '_copy',
-      model.model_name + '_copy',
-      model.url,
-      model.max_content_length,
-      model.max_token,
-      model.api_key,
-      nextIndex,
-      model.api_format,
-      model.model_label_id,
-      model.capabilities,
-      0, // 复制时清除锁定时间戳
-      model.isDisable ? 1 : 0,
-      userId // 复制到当前用户
-    );
+    const updateStmt = db.prepare('UPDATE models SET sort_index = ? WHERE id = ? AND user_id = ?');
+
+    const copyTransaction = db.transaction(() => {
+      // 1. 插入新复制的模型
+      const result = insertStmt.run(
+        model.name + '_copy',
+        model.model_name + '_copy',
+        model.url,
+        model.max_content_length,
+        model.max_token,
+        model.api_key,
+        0, // 临时 sort_index，后面统一重排
+        model.api_format,
+        model.model_label_id,
+        model.capabilities,
+        0, // 复制时清除锁定时间戳
+        model.isDisable ? 1 : 0,
+        userId // 复制到当前用户
+      );
+      const newId = Number(result.lastInsertRowid);
+
+      // 2. 将新模型插入到原模型位置的下一个位置
+      const newOrderList = [...currentModels];
+      if (targetIdx !== -1) {
+        newOrderList.splice(targetIdx + 1, 0, { id: newId });
+      } else {
+        newOrderList.push({ id: newId });
+      }
+
+      // 3. 重新规范化所有模型的 sort_index
+      for (let i = 0; i < newOrderList.length; i++) {
+        updateStmt.run(i, newOrderList[i].id, userId);
+      }
+
+      return newId;
+    });
+
+    const newId = copyTransaction();
 
     res.status(201).json({
       success: true,
       message: '模型复制成功',
-      data: { id: result.lastInsertRowid }
+      data: { id: newId }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: '复制失败', error });

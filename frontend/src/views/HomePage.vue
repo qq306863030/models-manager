@@ -105,9 +105,9 @@
                   @copy="handleCopy"
                   @delete="handleDelete"
                   @toggle-lock="handleToggleLock"
-
                   @toggle-disable="handleToggleDisable"
-                  @submit-edit="handleEditSubmit" />
+                  @submit-edit="handleEditSubmit"
+                  @move-to-top="handleMoveToTop" />
               </template>
             </draggable>
           </div>
@@ -262,6 +262,7 @@ import {
   handleBatchDelete,
   isAllChecked,
   handleReorder,
+  handleMoveToTop,
   selectModel,
   apiDialogVisible,
   userProxyBaseUrl,
@@ -710,7 +711,7 @@ onUnmounted(() => {
   }
 
   .header-status {
-    width: 120px;
+    width: 140px;
     flex-shrink: 0;
     justify-content: center;
   }

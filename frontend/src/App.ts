@@ -390,16 +390,49 @@ export const handleReorder = async (newList: Model[]) => {
   // 更新本地排序
   modelList.value = newList
   // 更新索引：按照当前顺序设置新的 sort_index
-  const items = newList.map((m, idx) => ({
-    id: m.id,
-    sort_index: idx,
-  }))
+  const items = newList.map((m, idx) => {
+    m.sort_index = idx
+    return {
+      id: m.id,
+      sort_index: idx,
+    }
+  })
   try {
     await reorderModels(items)
     ElMessage.success('排序已保存')
   } catch {
     ElMessage.error('排序保存失败')
     fetchModels() // 恢复原顺序
+  }
+}
+
+// ========== 置顶模型 ==========
+export const handleMoveToTop = async (id: number) => {
+  const index = modelList.value.findIndex((m) => m.id === id)
+  if (index === 0) {
+    ElMessage.info('该模型已在最顶部')
+    return
+  }
+  if (index === -1) return
+
+  const newList = [...modelList.value]
+  const [target] = newList.splice(index, 1)
+  newList.unshift(target)
+
+  modelList.value = newList
+  const items = newList.map((m, idx) => {
+    m.sort_index = idx
+    return {
+      id: m.id,
+      sort_index: idx,
+    }
+  })
+  try {
+    await reorderModels(items)
+    ElMessage.success('已置顶')
+  } catch {
+    ElMessage.error('置顶失败')
+    fetchModels()
   }
 }
 

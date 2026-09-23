@@ -1,6 +1,6 @@
 {
   "name": "ai-models-manager",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "description": "一个简单的模型管理工具，统一管理多种 LLM 提供商，提供代理路由和 token 追踪能力，提供模型中转能力。",
   "main": "dist/app.js",
   "bin": {
@@ -21,6 +21,7 @@
     "delete": "pm2 delete ecosystem.config.js",
     "logs": "pm2 logs",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "update-models": "node scripts/update-models.js",
     "up": "rdt exec release.config.cjs"
   },
   "repository": {

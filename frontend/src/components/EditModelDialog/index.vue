@@ -13,9 +13,22 @@
         <el-input v-model="formData.name" placeholder="请输入模型名称" />
       </el-form-item>
       <el-form-item label="模型ID" prop="model_name">
-        <el-input
+        <el-select
           v-model="formData.model_name"
-          placeholder="请输入模型ID" />
+          placeholder="请搜索或选择模型"
+          filterable
+          clearable
+          allow-create
+          default-first-option
+          style="width: 100%"
+          @change="handleModelNameChange"
+          @blur="handleModelNameBlur">
+          <el-option
+            v-for="opt in allModelOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value" />
+        </el-select>
       </el-form-item>
       <el-form-item label="接口地址" prop="url">
         <el-input v-model="formData.url" placeholder="请输入接口地址" />
@@ -41,12 +54,18 @@
       <el-form-item label="最大内容长度">
         <el-input-number
           v-model="formData.max_content_length"
-          :min="1" />
+          :min="1"
+          :max="10000000"
+          controls-position="right"
+          style="width: 100%" />
       </el-form-item>
       <el-form-item label="最大 Token">
         <el-input-number
           v-model="formData.max_token"
-          :min="1" />
+          :min="1"
+          :max="10000000"
+          controls-position="right"
+          style="width: 100%" />
       </el-form-item>
       <el-form-item label="模态能力">
         <el-select
@@ -74,11 +93,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { Model, ModelForm } from '@/api/modelService'
+import { getLlmModels, type LlmCompany, type LlmModelItem } from '@/api/llmService'
 import type { EditFormData, EditModelDialogEmits } from './index'
 import { API_FORMAT_OPTIONS, CAPABILITIES_OPTIONS } from '@/types/enum'
+import { useAllModels } from '@/composables/useAllModels'
 
 defineOptions({
   name: 'EditModelDialog',
@@ -91,6 +112,13 @@ const dialogVisible = ref(false)
 const submitLoading = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
+
+// 从 models.json 获取所有模型数据与配置映射
+const { allModelOptions, modelDataMap, loadAllModels } = useAllModels()
+
+onMounted(() => {
+  loadAllModels()
+})
 
 // 表单数据
 const formData = reactive<EditFormData>({
@@ -109,13 +137,38 @@ const formData = reactive<EditFormData>({
 // 表单验证规则
 const formRules: FormRules = {
   name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
-  model_name: [{ required: true, message: '请输入模型ID', trigger: 'blur' }],
+  model_name: [{ required: true, message: '请输入模型ID', trigger: ['blur', 'change'] }],
   url: [{ required: true, message: '请输入接口地址', trigger: 'blur' }],
   api_key: [{ required: true, message: '请输入 API Key', trigger: 'blur' }],
 }
 
+// 模型ID变化时，匹配成功后自动填表（最大内容长度、最大 Token、模态能力）
+const handleModelNameChange = (modelName: string) => {
+  if (!modelName?.trim()) return
+
+  const modelData = modelDataMap.value.get(modelName.trim())
+  if (modelData) {
+    formData.max_content_length = Number(modelData.content_length) || 200000
+    formData.max_token = Number(modelData.max_token) || 64000
+    if (modelData.capabilities?.length) {
+      formData.capabilities = [...modelData.capabilities]
+    }
+  }
+}
+
+// 处理模型名称输入框失焦（支持自定义输入）
+const handleModelNameBlur = (event: FocusEvent) => {
+  const target = event.target as HTMLInputElement
+  const inputValue = target.value?.trim()
+  if (inputValue && !formData.model_name?.trim()) {
+    formData.model_name = inputValue
+    handleModelNameChange(inputValue)
+  }
+}
+
 // 打开对话框并填充数据
 const openDialog = (model: Model) => {
+  loadAllModels()
   editingId.value = model.id
   Object.assign(formData, {
     name: model.name,

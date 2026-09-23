@@ -1,29 +1,11 @@
-﻿[
+[
   {
     "llmCompany": "DeepSeek",
     "api_format": "1",
     "url": "https://api.deepseek.com",
     "models": [
-      {
-        "model": "deepseek-v4-flash",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "deepseek-v4-pro",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      }
+      "deepseek-v4-flash",
+      "deepseek-v4-pro"
     ]
   },
   {
@@ -31,49 +13,10 @@
     "api_format": "1",
     "url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "models": [
-      {
-        "model": "qwen3.7-max",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "qwen3.7-plus",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "qwen3.6-plus",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "qwen3.6-flash",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "qwen3.6-plus",
+      "qwen3.6-flash"
     ]
   },
   {
@@ -81,37 +24,9 @@
     "api_format": "2",
     "url": "https://api.minimaxi.com/anthropic",
     "models": [
-      {
-        "model": "MiniMax-M3",
-        "content_length": "1000000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "MiniMax-M2.7",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "MiniMax-M2.7-highspeed",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      }
+      "MiniMax-M3",
+      "MiniMax-M2.7",
+      "MiniMax-M2.7-highspeed"
     ]
   },
   {
@@ -119,27 +34,8 @@
     "api_format": "1",
     "url": "https://token-plan-cn.xiaomimimo.com/v1",
     "models": [
-      {
-        "model": "mimo-v2.5-pro",
-        "content_length": "1048576",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "mimo-v2.5",
-        "content_length": "1048576",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "mimo-v2.5-pro",
+      "mimo-v2.5"
     ]
   },
   {
@@ -147,46 +43,10 @@
     "api_format": "1",
     "url": "https://open.bigmodel.cn/api/paas/v4",
     "models": [
-      {
-        "model": "glm-5.2",
-        "content_length": "1000000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "glm-5.1",
-        "content_length": "200000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "glm-5",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "glm-5-turbo",
-        "content_length": "200000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      }
+      "glm-5.2",
+      "glm-5.1",
+      "glm-5",
+      "glm-5-turbo"
     ]
   },
   {
@@ -194,39 +54,9 @@
     "api_format": "1",
     "url": "https://api.openai.com/v1",
     "models": [
-      {
-        "model": "gpt-5.5",
-        "content_length": "1050000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "gpt-5.4",
-        "content_length": "1050000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "gpt-5.4-mini",
-        "content_length": "400000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini"
     ]
   },
   {
@@ -234,133 +64,18 @@
     "api_format": "1",
     "url": "https://ark.cn-beijing.volces.com/api/coding/v3",
     "models": [
-      {
-        "model": "doubao-seed-2.0-code",
-        "content_length": "256000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "doubao-seed-2.0-pro",
-        "content_length": "256000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "doubao-seed-2.0-lite",
-        "content_length": "256000",
-        "max_token": "32000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "doubao-seed-code",
-        "content_length": "256000",
-        "max_token": "64000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "minimax-m2.7",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "minimax-m3",
-        "content_length": "1000000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "glm-5.1",
-        "content_length": "200000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "glm-5.2",
-        "content_length": "1000000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "deepseek-v4-flash",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "deepseek-v4-pro",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "kimi-k2.6",
-        "content_length": "262144",
-        "max_token": "262144",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "kimi-k2.7",
-        "content_length": "262144",
-        "max_token": "262144",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "doubao-seed-2.0-code",
+      "doubao-seed-2.0-pro",
+      "doubao-seed-2.0-lite",
+      "doubao-seed-code",
+      "minimax-m2.7",
+      "minimax-m3",
+      "glm-5.1",
+      "glm-5.2",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "kimi-k2.6",
+      "kimi-k2.7"
     ]
   },
   {
@@ -368,100 +83,15 @@
     "api_format": "1",
     "url": "https://opencode.ai/zen/go/v1",
     "models": [
-      {
-        "model": "glm-5.2",
-        "content_length": "1000000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "glm-5.1",
-        "content_length": "200000",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "kimi-k2.7-code",
-        "content_length": "262144",
-        "max_token": "262144",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "kimi-k2.6",
-        "content_length": "262144",
-        "max_token": "262144",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "deepseek-v4-pro",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "deepseek-v4-flash",
-        "content_length": "1000000",
-        "max_token": "384000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "mimo-v2.5",
-        "content_length": "1048576",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "mimo-v2.5-pro",
-        "content_length": "1048576",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "kimi-k3",
-        "content_length": "1048576",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "glm-5.2",
+      "glm-5.1",
+      "kimi-k2.7-code",
+      "kimi-k2.6",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+      "mimo-v2.5",
+      "mimo-v2.5-pro",
+      "kimi-k3"
     ]
   },
   {
@@ -469,69 +99,12 @@
     "api_format": "2",
     "url": "https://opencode.ai/zen/go/v1",
     "models": [
-      {
-        "model": "minimax-m3",
-        "content_length": "1000000",
-        "max_token": "128000",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "minimax-m2.7",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "minimax-m2.5",
-        "content_length": "204800",
-        "max_token": "131072",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "qwen3.7-max",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking"
-        ]
-      },
-      {
-        "model": "qwen3.7-plus",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      },
-      {
-        "model": "qwen3.6-plus",
-        "content_length": "1000000",
-        "max_token": "65536",
-        "capabilities": [
-          "completion",
-          "tools",
-          "thinking",
-          "vision"
-        ]
-      }
+      "minimax-m3",
+      "minimax-m2.7",
+      "minimax-m2.5",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "qwen3.6-plus"
     ]
   }
 ]
