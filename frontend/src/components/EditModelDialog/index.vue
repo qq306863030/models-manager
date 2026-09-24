@@ -13,22 +13,12 @@
         <el-input v-model="formData.name" placeholder="请输入模型名称" />
       </el-form-item>
       <el-form-item label="模型ID" prop="model_name">
-        <el-select
+        <ModelSelect
           v-model="formData.model_name"
           placeholder="请搜索或选择模型"
-          filterable
-          clearable
-          allow-create
-          default-first-option
-          style="width: 100%"
           @change="handleModelNameChange"
-          @blur="handleModelNameBlur">
-          <el-option
-            v-for="opt in allModelOptions"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value" />
-        </el-select>
+          @blur="handleModelNameBlur"
+        />
       </el-form-item>
       <el-form-item label="接口地址" prop="url">
         <el-input v-model="formData.url" placeholder="请输入接口地址" />
@@ -100,6 +90,7 @@ import { getLlmModels, type LlmCompany, type LlmModelItem } from '@/api/llmServi
 import type { EditFormData, EditModelDialogEmits } from './index'
 import { API_FORMAT_OPTIONS, CAPABILITIES_OPTIONS } from '@/types/enum'
 import { useAllModels } from '@/composables/useAllModels'
+import ModelSelect from '@/components/ModelSelect/index.vue'
 
 defineOptions({
   name: 'EditModelDialog',
@@ -114,7 +105,7 @@ const editingId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
 
 // 从 models.json 获取所有模型数据与配置映射
-const { allModelOptions, modelDataMap, loadAllModels } = useAllModels()
+const { modelDataMap, loadAllModels } = useAllModels()
 
 onMounted(() => {
   loadAllModels()

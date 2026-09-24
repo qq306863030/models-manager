@@ -86,22 +86,13 @@
         :key="row.key"
         class="model-row">
         <!-- 模型ID：下拉搜索框 -->
-        <el-select
+        <ModelSelect
           v-model="row.model_name"
           placeholder="请搜索或选择模型"
-          filterable
-          clearable
-          allow-create
-          default-first-option
-          style="width: 100%"
+          :priority-models="currentCompanyModelNames"
           @change="(val) => handleModelNameChange(val, row)"
-          @blur="(e) => handleModelNameBlur(e, row)">
-          <el-option
-            v-for="opt in allModelOptions"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value" />
-        </el-select>
+          @blur="(e) => handleModelNameBlur(e, row)"
+        />
 
         <!-- 模型名称：输入框，显示 [模型名称前缀]_[模型ID] -->
         <el-input
@@ -167,6 +158,7 @@ import type { AddFormData, AddFormRow, ModelLabelOption, AddModelDialogEmits } f
 import { API_FORMAT_OPTIONS, CAPABILITIES_OPTIONS, DEFAULT_CAPABILITIES } from '@/types/enum'
 import { getLlmModels, type LlmCompany } from '@/api/llmService'
 import { useAllModels } from '@/composables/useAllModels'
+import ModelSelect from '@/components/ModelSelect/index.vue'
 
 defineOptions({ name: 'AddModelDialog' })
 
@@ -196,8 +188,14 @@ const vendorOptions = computed(() =>
   })),
 )
 
+// 当前供应商下的模型列表名称（优先显示）
+const currentCompanyModelNames = computed(() => {
+  const company = llmCompanies.value.find((c) => c.llmCompany === formData.vendor)
+  return company ? company.models.map((m) => m.model) : []
+})
+
 // 从 models.json 获取所有模型数据与配置映射
-const { allModelOptions, modelDataMap, loadAllModels } = useAllModels()
+const { modelDataMap, loadAllModels } = useAllModels()
 
 onMounted(() => {
   loadAllModels()

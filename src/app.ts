@@ -24,6 +24,7 @@ import { errorBroadcaster } from './utils/errorBroadcaster';
 import { requestTracker } from './utils/requestTracker';
 import { formatDate, formatTimestamp } from './utils/timezone';
 import { getBase64FileDir } from './utils/base64-file';
+import { initModelSyncScheduler } from './services/modelSyncService';
 import os from 'os';
 
 // ========== 日志文件重定向 ==========
@@ -266,6 +267,9 @@ server.listen(PORT, () => {
   console.log(`API 地址: http://localhost:${PORT}/api`);
   console.log(`代理接口: http://localhost:${PORT}/v1/models 等`);
   console.log(`WebSocket 地址: ws://localhost:${PORT}`);
+
+  // 启动 models.json 自动同步服务（启动后自动更新 + 每日凌晨 2 点定时更新）
+  initModelSyncScheduler();
 });
 
 export default app;
