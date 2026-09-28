@@ -53,8 +53,31 @@ export interface IChatSession {
   messages: IChatMessage[];
 }
 
-const STORAGE_KEY = 'mm_ai_chat_sessions_v1';
-const LAST_ACTIVE_SESSION_KEY = 'mm_ai_chat_active_session_id';
+const STORAGE_KEY_PREFIX = 'mm_ai_chat_sessions_v1';
+const LAST_ACTIVE_SESSION_KEY_PREFIX = 'mm_ai_chat_active_session_id';
+/** 未登录时的本地缓存命名空间（正常聊天页面都在登录态下访问，仅兜底） */
+const ANONYMOUS_NAMESPACE = '__anonymous__';
+
+/** 当前登录用户名，用于按用户隔离本地缓存，避免不同账号串数据 */
+function getCurrentUsername(): string {
+  try {
+    return localStorage.getItem('auth_username') || '';
+  } catch {
+    return '';
+  }
+}
+
+/** 会话本地缓存 key（按用户隔离） */
+function sessionStorageKey(): string {
+  const user = getCurrentUsername();
+  return `${STORAGE_KEY_PREFIX}:${user || ANONYMOUS_NAMESPACE}`;
+}
+
+/** 最近活跃会话 key（按用户隔离） */
+function activeSessionKey(): string {
+  const user = getCurrentUsername();
+  return `${LAST_ACTIVE_SESSION_KEY_PREFIX}:${user || ANONYMOUS_NAMESPACE}`;
+}
 
 /** 服务端同步节流间隔（毫秒）：流式输出期间避免逐 token 写库 */
 const SERVER_FLUSH_INTERVAL = 1500;
@@ -71,6 +94,8 @@ const isModelsLoading = ref<boolean>(false);
 
 // ===== 同步调度内部状态（模块级单例，PC 与移动端共用同一份逻辑） =====
 let isInitialized = false;
+/** 记录上次初始化时的登录用户，用于检测账号切换后重置内存态 */
+let initializedUsername: string | null = null;
 let pendingFlushPromise: Promise<void> | null = null;
 let serverFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let localCacheTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,7 +138,7 @@ function toPayload(session: IChatSession): ChatSessionPayload {
 /** 读取本地缓存的会话列表 */
 function readLocalCache(): IChatSession[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(sessionStorageKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -126,12 +151,13 @@ function readLocalCache(): IChatSession[] {
   }
 }
 
-/** 立即写入本地缓存 */
+/** 立即写入本地缓存（未登录时不落盘，避免会话串到匿名命名空间） */
 function writeLocalCache(): void {
+  if (!getCurrentUsername()) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.value));
+    localStorage.setItem(sessionStorageKey(), JSON.stringify(sessions.value));
     if (currentSessionId.value) {
-      localStorage.setItem(LAST_ACTIVE_SESSION_KEY, currentSessionId.value);
+      localStorage.setItem(activeSessionKey(), currentSessionId.value);
     }
   } catch (e) {
     console.warn('[useChatStore] 写入本地会话缓存失败:', e);
@@ -249,7 +275,7 @@ export function useChatStore() {
   /** 恢复上次活跃会话（仅本机记录，互不干扰各端当前打开的会话） */
   function restoreActiveSession(list: IChatSession[]): void {
     if (list.length === 0) return;
-    const lastId = localStorage.getItem(LAST_ACTIVE_SESSION_KEY);
+    const lastId = localStorage.getItem(activeSessionKey());
     if (lastId && list.some((s) => s.id === lastId)) {
       currentSessionId.value = lastId;
       return;
@@ -259,13 +285,46 @@ export function useChatStore() {
     }
   }
 
+  /** 账号切换时清空上个用户残留的内存态，避免会话列表串号或被误同步到新账号 */
+  function resetForUserSwitch(): void {
+    // 上个用户若还在流式输出，直接中止，防止其回调继续打脏标记
+    try {
+      agentLoop.abort();
+    } catch {
+      // 忽略未初始化等异常
+    }
+    // 丢弃上个用户的待同步队列：这些会话属于旧账号，绝不能在新账号的请求头下提交
+    if (serverFlushTimer) {
+      clearTimeout(serverFlushTimer);
+      serverFlushTimer = null;
+    }
+    if (localCacheTimer) {
+      clearTimeout(localCacheTimer);
+      localCacheTimer = null;
+    }
+    pendingFlushPromise = null;
+    dirtySessionIds.clear();
+    sessions.value = [];
+    currentSessionId.value = '';
+    isStreaming.value = false;
+    lastServerFlush = 0;
+    lastLocalCache = 0;
+  }
+
   /**
    * 初始化会话数据：
-   * 先用本地缓存秒开，再与服务端对齐（迁移本地独有会话 + 合并两端更新）
+   * 先用本地缓存秒开，再与服务端对齐（迁移本地独有会话 + 合并两端更新）；
+   * 检测到登录用户变化时，先重置内存态再按新用户重新同步
    */
   async function initSessions(): Promise<void> {
-    if (isInitialized) return;
+    const username = getCurrentUsername();
+    if (isInitialized) {
+      if (initializedUsername === username) return;
+      // 同一浏览器内切换了账号（SPA 内登出再登录，页面未刷新）
+      resetForUserSwitch();
+    }
     isInitialized = true;
+    initializedUsername = username;
 
     const localSessions = readLocalCache();
     sessions.value = localSessions;
@@ -337,7 +396,7 @@ export function useChatStore() {
   watch(currentSessionId, (newId) => {
     if (newId) {
       try {
-        localStorage.setItem(LAST_ACTIVE_SESSION_KEY, newId);
+        localStorage.setItem(activeSessionKey(), newId);
       } catch (e) {
         // 忽略隐私模式下的写入失败
       }
