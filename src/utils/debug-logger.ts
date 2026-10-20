@@ -7,12 +7,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { LOG_DIR } from './log-cleaner';
 import { formatDate, formatTimestampMS } from './timezone';
 
-/** 统一日志目录 */
+/** 统一日志目录（与 log-cleaner 共用同一路径） */
 function getLogDir(): string {
-  return path.join(os.homedir(), '.models-manager', 'logs');
+  return LOG_DIR;
 }
 
 /** 获取当前小时级时间戳（用于日志文件名：YYYY-MM-DD-HH） */

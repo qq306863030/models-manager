@@ -24,12 +24,12 @@ import { errorBroadcaster } from './utils/errorBroadcaster';
 import { requestTracker } from './utils/requestTracker';
 import { formatDate, formatTimestamp } from './utils/timezone';
 import { getBase64FileDir } from './utils/base64-file';
+import { LOG_DIR, initLogCleanup } from './utils/log-cleaner';
 import { initModelSyncScheduler } from './services/modelSyncService';
-import os from 'os';
 
 // ========== 日志文件重定向 ==========
 // PM2 不支持动态日期文件名，在应用层重定向 stdout/stderr 到日期文件
-const logDir = path.join(os.homedir(), '.models-manager', 'logs');
+const logDir = LOG_DIR;
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
 function getDateStr(): string {
@@ -88,6 +88,9 @@ process.stderr.write = ((chunk: any, encoding?: any, callback?: any) => {
   errStream.write(prefixed);
   return origStderrWrite(chunk, encoding, callback);
 }) as any;
+
+// 日志自动清理：启动即清理一次，之后每 6 小时一次，仅保留最近 3 天（LOG_RETENTION_DAYS 可调）
+initLogCleanup();
 
 const app: Application = express();
 const PORT = process.env.PORT || 11888;
